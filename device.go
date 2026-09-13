@@ -2,6 +2,20 @@
 
 package preset_api
 
+func AutoOpen(config *PresetAutoConfig) (device PresetDevice, status int32) {
+	var handle uintptr
+	status = invokeStatus("preset_auto_open", pointer(config), pointer(&handle))
+	device.state = newHandle(handle)
+	return
+}
+
+func DeviceGetBackend(device PresetDevice) (backend uint8, status int32) {
+	status = withHandle(device.state, func(handle uintptr) int32 {
+		return invokeStatus("preset_device_get_backend", word(handle), pointer(&backend))
+	})
+	return
+}
+
 func ToomossOpen() (device PresetDevice, status int32) {
 	var handle uintptr
 	status = invokeStatus("preset_toomoss_open", pointer(&handle))
@@ -15,6 +29,12 @@ func ToomossCanInit(device PresetDevice, config *PresetToomossConfig) int32 {
 	})
 }
 
+func ToomossCanInitWithTiming(device PresetDevice, config *PresetToomossConfig, timing *PresetCanFdTiming) int32 {
+	return withHandle(device.state, func(handle uintptr) int32 {
+		return invokeStatus("preset_toomoss_can_init_with_timing", word(handle), pointer(config), pointer(timing))
+	})
+}
+
 func PcanOpen(config *PresetPCANConfig) (device PresetDevice, status int32) {
 	var handle uintptr
 	status = invokeStatus("preset_pcan_open", pointer(config), pointer(&handle))
@@ -22,9 +42,22 @@ func PcanOpen(config *PresetPCANConfig) (device PresetDevice, status int32) {
 	return
 }
 
+func PcanOpenWithTiming(config *PresetPCANConfig, timing *PresetCanFdTiming) (device PresetDevice, status int32) {
+	var handle uintptr
+	status = invokeStatus("preset_pcan_open_with_timing", pointer(config), pointer(timing), pointer(&handle))
+	device.state = newHandle(handle)
+	return
+}
+
 func PcanCanInit(device PresetDevice, config *PresetPCANConfig) int32 {
 	return withHandle(device.state, func(handle uintptr) int32 {
 		return invokeStatus("preset_pcan_can_init", word(handle), pointer(config))
+	})
+}
+
+func PcanCanInitWithTiming(device PresetDevice, config *PresetPCANConfig, timing *PresetCanFdTiming) int32 {
+	return withHandle(device.state, func(handle uintptr) int32 {
+		return invokeStatus("preset_pcan_can_init_with_timing", word(handle), pointer(config), pointer(timing))
 	})
 }
 

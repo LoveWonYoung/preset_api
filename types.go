@@ -5,7 +5,7 @@ package preset_api
 import "sync"
 
 // SupportedABIVersion is the only preset_rs C ABI accepted by this binding.
-const SupportedABIVersion uint32 = 4
+const SupportedABIVersion uint32 = 5
 
 // handleState serializes close against calls using the same native handle.
 // Wrappers are intentionally cheap to copy: every copy shares this state.
@@ -97,6 +97,26 @@ const (
 	PRESET_CAP_FILE_LOGGING
 	PRESET_CAP_CAN_CHANNEL_SELECT
 	PRESET_CAP_BUS_LOAD
+	PRESET_CAP_RAW_CAN_METADATA
+	PRESET_CAP_RUNTIME_BRS
+	PRESET_CAP_EXPLICIT_FD_TIMING
+	PRESET_CAP_AUTO_DRIVER
+	PRESET_CAP_PCAN_LIN
+	PRESET_CAP_TSMASTER_LIN
+	PRESET_CAP_VECTOR_LIN
+)
+
+const (
+	PRESET_CAN_DIRECTION_TX = iota
+	PRESET_CAN_DIRECTION_RX
+)
+
+const (
+	PRESET_CAN_BACKEND_NONE = iota
+	PRESET_CAN_BACKEND_TOOMOSS
+	PRESET_CAN_BACKEND_TSMASTER
+	PRESET_CAN_BACKEND_PCAN
+	PRESET_CAN_BACKEND_VECTOR
 )
 
 const (
@@ -121,6 +141,17 @@ const (
 	PRESET_TOOMOSS_ELINS_VER_IND83080 = iota
 	PRESET_TOOMOSS_ELINS_VER_IND83220
 	PRESET_TOOMOSS_ELINS_VER_IND83010
+)
+
+const (
+	PRESET_LIN_PROTOCOL_13 = iota
+	PRESET_LIN_PROTOCOL_20
+	PRESET_LIN_PROTOCOL_21
+)
+
+const (
+	PRESET_LIN_FUNCTIONAL_NAD = 0x7e
+	PRESET_LIN_BROADCAST_NAD  = 0x7f
 )
 
 const (

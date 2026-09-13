@@ -7,7 +7,7 @@
 
 程序必须先用明确路径加载 DLL。相对路径会在调用 Windows `LoadLibrary` 之前转换为
 绝对路径，并用安全搜索标志加载依赖 DLL（目标 DLL 目录及 Windows 默认安全目录），
-不依赖当前目录或 `PATH`。加载时会校验 ABI 版本，当前仅接受 ABI v4。
+不依赖当前目录或 `PATH`。加载时会校验 ABI 版本，当前仅接受 ABI v5。
 
 ```go
 package main
@@ -41,6 +41,32 @@ func main() {
 	defer preset.DeviceClose(&device)
 }
 ```
+
+ABI v5 新增了自动 CAN 后端选择、显式 CAN-FD 时序、运行时 BRS/发送回显、带方向和
+DLC 元数据的原始帧读取，以及 PCAN、TSMaster、Vector 的 LIN 主站接口。例如：
+
+```go
+autoConfig, _ := preset.AutoDefaultConfig()
+device, status := preset.AutoOpen(&autoConfig)
+if status != preset.PRESET_OK {
+	log.Fatal(preset.LastErrorString())
+}
+backend, _ := preset.DeviceGetBackend(device)
+fmt.Println("CAN backend:", backend)
+preset.DeviceClose(&device)
+
+linConfig, _ := preset.PcanLinDefaultConfig()
+linDevice, status := preset.PcanLinOpen(&linConfig)
+if status == preset.PRESET_OK {
+	frame, readStatus := preset.LinMasterRead(linDevice, linConfig.Channel, 0x3d, 100)
+	fmt.Println(frame, readStatus)
+	preset.DeviceClose(&linDevice)
+}
+```
+
+`LinUdsClientNew` 可用于所有支持的 LIN 后端。旧的 `ToomossLinUdsClientNew` Go 名称
+仍保留为兼容别名，但内部调用 ABI v5 的通用构造函数。`CanUdsTryReadEx` 与
+`CanUdsTryRead` 会消费同一个原始帧队列，不要在同一个 client 上混用。
 
 所有返回 `status` 的函数沿用 `preset_rs.h` 中的 `PRESET_OK` 和
 `PRESET_ERR_*`。请求与批量读取函数返回实际写入数量；若输出切片太小，会返回
@@ -79,6 +105,9 @@ go test ./...
 # 可选的 DLL ABI 冒烟测试
 $env:PRESET_RS_DLL = 'C:\path\to\preset_rs.dll'
 go test -v ./...
+
+# 使用 Python ctypes 检查 ABI v5 结构体、默认值及新增 CAN/LIN 调用签名
+python ctypes_smoke_test.py $env:PRESET_RS_DLL
 ```
 
 从非 Windows 主机只做编译检查：

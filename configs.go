@@ -16,8 +16,34 @@ type PresetConfig struct {
 	PaddingByte    uint8
 	BlockSize      uint8
 	MaxWaitFrames  uint8
-	RawRxEnabled   uint8 // 1 mirrors RX frames to preset_can_uds_try_read
+	RawRxEnabled   uint8 // 1 enables the raw capture ring
 	Reserved       [2]uint8
+}
+
+type PresetCanFdTiming struct {
+	NominalBRP   uint32
+	NominalTSEG1 uint32
+	NominalTSEG2 uint32
+	NominalSJW   uint32
+	DataBRP      uint32
+	DataTSEG1    uint32
+	DataTSEG2    uint32
+	DataSJW      uint32
+}
+
+type PresetAutoConfig struct {
+	Channel             uint8
+	IsFD                uint8
+	BRS                 uint8
+	Reserved            uint8
+	NominalBitrate      uint32
+	DataBitrate         uint32
+	RxBufferSize        uint32 // 1-65536 frames
+	PollBatchSize       uint32 // 1-rx_buffer_size
+	MinTxIntervalUS     uint32
+	MinRxPollIntervalUS uint32
+	CandidateOrder      [4]uint8 // PRESET_CAN_BACKEND_* priority order; zero entries are skipped
+	ReservedTail        [4]uint8
 }
 
 type PresetToomossConfig struct {
@@ -55,6 +81,41 @@ type PresetToomossLinFrame struct {
 	ClassicChecksum uint8
 	Reserved        uint8
 	Data            [8]uint8
+}
+
+type PresetPCANLinConfig struct {
+	Channel        uint8 // logical channel and default enumeration index
+	Reserved       uint8
+	HardwareHandle uint16 // 0 selects by channel index
+	Baudrate       uint32 // 1000-20000, default 19200
+}
+
+type PresetTSMasterLinConfig struct {
+	ApplicationChannel uint8 // zero-based logical channel, 0-31
+	HardwareChannel    uint8 // zero-based physical LIN channel
+	Protocol           uint8 // PRESET_LIN_PROTOCOL_*
+	Reserved           uint8
+	HardwareIndex      int32
+	DeviceType         int32
+	Baudrate           uint32 // 1000-20000, default 19200
+}
+
+type PresetVectorLinConfig struct {
+	ApplicationChannel uint8 // logical channel exposed by preset_rs
+	Version            uint8 // 1=LIN 1.3, 2=LIN 2.0, 3=LIN 2.1
+	Reserved           [2]uint8
+	HardwareType       int32 // PRESET_VECTOR_HWTYPE_*
+	HardwareIndex      uint32
+	HardwareChannel    uint32
+	Baudrate           uint32 // 1000-20000, default 19200
+	RxQueueSize        uint32 // power of two, 8192-524288
+}
+
+type PresetLinFrame struct {
+	FrameID  uint8
+	DataLen  uint8
+	Reserved [2]uint8
+	Data     [8]uint8
 }
 
 // PresetToomossElinsMessage Matches the vendor ELINS_MSG layout (88 bytes).
@@ -132,6 +193,19 @@ type PresetCanFrame struct {
 	IsFD     uint8
 	Reserved [2]uint8
 	Data     [64]uint8
+}
+
+// PresetCanFrameEx includes DLC, direction, CAN-FD, and BRS metadata. Do not
+// mix CanUdsTryRead and CanUdsTryReadEx on one client; both drain the same ring.
+type PresetCanFrameEx struct {
+	ID        uint32
+	DLC       uint8
+	DataLen   uint8
+	Direction uint8 // PRESET_CAN_DIRECTION_*
+	IsFD      uint8
+	BRS       uint8
+	Reserved  [3]uint8
+	Data      [64]uint8
 }
 
 type PresetRxStats struct {

@@ -71,16 +71,82 @@ func ToomossElinsRead(device PresetDevice, channel uint8, messages []PresetToomo
 	return int(length), status
 }
 
-func ToomossLinUdsClientNew(device PresetDevice, channel, nad uint8) (client PresetLinUdsClient, status int32) {
+func PcanLinOpen(config *PresetPCANLinConfig) (device PresetDevice, status int32) {
+	var handle uintptr
+	status = invokeStatus("preset_pcan_lin_open", pointer(config), pointer(&handle))
+	device.state = newHandle(handle)
+	return
+}
+
+func PcanLinInit(device PresetDevice, config *PresetPCANLinConfig) int32 {
+	return withHandle(device.state, func(handle uintptr) int32 {
+		return invokeStatus("preset_pcan_lin_init", word(handle), pointer(config))
+	})
+}
+
+func TsmasterLinOpen(config *PresetTSMasterLinConfig) (device PresetDevice, status int32) {
+	var handle uintptr
+	status = invokeStatus("preset_tsmaster_lin_open", pointer(config), pointer(&handle))
+	device.state = newHandle(handle)
+	return
+}
+
+func TsmasterLinInit(device PresetDevice, config *PresetTSMasterLinConfig) int32 {
+	return withHandle(device.state, func(handle uintptr) int32 {
+		return invokeStatus("preset_tsmaster_lin_init", word(handle), pointer(config))
+	})
+}
+
+func VectorLinOpen(config *PresetVectorLinConfig) (device PresetDevice, status int32) {
+	var handle uintptr
+	status = invokeStatus("preset_vector_lin_open", pointer(config), pointer(&handle))
+	device.state = newHandle(handle)
+	return
+}
+
+func VectorLinInit(device PresetDevice, config *PresetVectorLinConfig) int32 {
+	return withHandle(device.state, func(handle uintptr) int32 {
+		return invokeStatus("preset_vector_lin_init", word(handle), pointer(config))
+	})
+}
+
+func LinMasterWrite(device PresetDevice, channel, frameID uint8, data []byte) int32 {
+	return withHandle(device.state, func(handle uintptr) int32 {
+		return invokeStatus(
+			"preset_lin_master_write",
+			word(handle), word(uintptr(channel)), word(uintptr(frameID)),
+			slicePointer(data), word(uintptr(len(data))),
+		)
+	})
+}
+
+func LinMasterRead(device PresetDevice, channel, frameID uint8, timeoutMS uint32) (frame PresetLinFrame, status int32) {
+	status = withHandle(device.state, func(handle uintptr) int32 {
+		return invokeStatus(
+			"preset_lin_master_read",
+			word(handle), word(uintptr(channel)), word(uintptr(frameID)),
+			word(uintptr(timeoutMS)), pointer(&frame),
+		)
+	})
+	return
+}
+
+func LinUdsClientNew(device PresetDevice, channel, nad uint8) (client PresetLinUdsClient, status int32) {
 	var handle uintptr
 	status = withHandle(device.state, func(deviceHandle uintptr) int32 {
 		return invokeStatus(
-			"preset_toomoss_lin_uds_client_new",
+			"preset_lin_uds_client_new",
 			word(deviceHandle), word(uintptr(channel)), word(uintptr(nad)), pointer(&handle),
 		)
 	})
 	client.state = newHandle(handle)
 	return
+}
+
+// ToomossLinUdsClientNew is kept for source compatibility. The ABI v5 LIN UDS
+// constructor is backend-independent, so new code should use LinUdsClientNew.
+func ToomossLinUdsClientNew(device PresetDevice, channel, nad uint8) (client PresetLinUdsClient, status int32) {
+	return LinUdsClientNew(device, channel, nad)
 }
 
 func LinUdsRequest(client PresetLinUdsClient, payload []byte, timeoutMS uint32, out []byte) (nad uint8, count int, status int32) {

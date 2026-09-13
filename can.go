@@ -58,6 +58,34 @@ func CanUdsSetManualFlowControl(client PresetCanUdsClient, enabled bool) int32 {
 	})
 }
 
+func CanUdsSetBRS(client PresetCanUdsClient, enabled bool) int32 {
+	var value uintptr
+	if enabled {
+		value = 1
+	}
+	return withHandle(client.state, func(handle uintptr) int32 {
+		return invokeStatus("preset_can_uds_set_brs", word(handle), word(value))
+	})
+}
+
+func CanUdsGetBRS(client PresetCanUdsClient) (enabled bool, status int32) {
+	var value uint8
+	status = withHandle(client.state, func(handle uintptr) int32 {
+		return invokeStatus("preset_can_uds_get_brs", word(handle), pointer(&value))
+	})
+	return value != 0, status
+}
+
+func CanUdsSetRawTxEcho(client PresetCanUdsClient, enabled bool) int32 {
+	var value uintptr
+	if enabled {
+		value = 1
+	}
+	return withHandle(client.state, func(handle uintptr) int32 {
+		return invokeStatus("preset_can_uds_set_raw_tx_echo", word(handle), word(value))
+	})
+}
+
 func CanUdsWrite(client PresetCanUdsClient, id uint32, isFD bool, data []byte) int32 {
 	var fd uintptr
 	if isFD {
@@ -76,6 +104,17 @@ func CanUdsTryRead(client PresetCanUdsClient, frames []PresetCanFrame) (count in
 	status = withHandle(client.state, func(handle uintptr) int32 {
 		return invokeStatus(
 			"preset_can_uds_try_read",
+			word(handle), slicePointer(frames), pointer(&length),
+		)
+	})
+	return int(length), status
+}
+
+func CanUdsTryReadEx(client PresetCanUdsClient, frames []PresetCanFrameEx) (count int, status int32) {
+	length := uintptr(len(frames))
+	status = withHandle(client.state, func(handle uintptr) int32 {
+		return invokeStatus(
+			"preset_can_uds_try_read_ex",
 			word(handle), slicePointer(frames), pointer(&length),
 		)
 	})

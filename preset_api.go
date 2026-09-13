@@ -282,6 +282,21 @@ func DefaultConfig() (config PresetConfig, err error) {
 	return config, err
 }
 
+func AutoDefaultConfig() (config PresetAutoConfig, err error) {
+	err = callStruct("preset_auto_default_config", unsafe.Pointer(&config), unsafe.Sizeof(config))
+	return config, err
+}
+
+func PcanDefaultFDTiming() (timing PresetCanFdTiming, err error) {
+	err = callStruct("preset_pcan_default_fd_timing", unsafe.Pointer(&timing), unsafe.Sizeof(timing))
+	return timing, err
+}
+
+func ToomossDefaultFDTiming() (timing PresetCanFdTiming, err error) {
+	err = callStruct("preset_toomoss_default_fd_timing", unsafe.Pointer(&timing), unsafe.Sizeof(timing))
+	return timing, err
+}
+
 func ToomossDefaultConfig() (config PresetToomossConfig, err error) {
 	err = callStruct("preset_toomoss_default_config", unsafe.Pointer(&config), unsafe.Sizeof(config))
 	return config, err
@@ -309,5 +324,20 @@ func TsmasterDefaultConfig() (config PresetTSMasterConfig, err error) {
 
 func VectorDefaultConfig() (config PresetVectorConfig, err error) {
 	err = callStruct("preset_vector_default_config", unsafe.Pointer(&config), unsafe.Sizeof(config))
+	return config, err
+}
+
+func PcanLinDefaultConfig() (config PresetPCANLinConfig, err error) {
+	err = callStruct("preset_pcan_lin_default_config", unsafe.Pointer(&config), unsafe.Sizeof(config))
+	return config, err
+}
+
+func TsmasterLinDefaultConfig() (config PresetTSMasterLinConfig, err error) {
+	err = callStruct("preset_tsmaster_lin_default_config", unsafe.Pointer(&config), unsafe.Sizeof(config))
+	return config, err
+}
+
+func VectorLinDefaultConfig() (config PresetVectorLinConfig, err error) {
+	err = callStruct("preset_vector_lin_default_config", unsafe.Pointer(&config), unsafe.Sizeof(config))
 	return config, err
 }
