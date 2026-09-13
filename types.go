@@ -1,5 +1,11 @@
 package preset_api
 
+// Opaque handles owned by preset_rs.dll. A zero value is a null handle.
+// Close functions clear the caller's handle after releasing it.
+type PresetDevice uintptr
+type PresetCanUdsClient uintptr
+type PresetLinUdsClient uintptr
+
 const (
 	PRESET_OK = -iota
 	PRESET_ERR_NULL_PTR
@@ -41,7 +47,7 @@ const (
 )
 
 const (
-	PRESET_TOOMOSS_CHANNEL_1 byte = iota
+	PRESET_TOOMOSS_CHANNEL_1 byte = 1 << iota
 	PRESET_TOOMOSS_CHANNEL_2
 	PRESET_TOOMOSS_CHANNEL_3
 	PRESET_TOOMOSS_CHANNEL_4
