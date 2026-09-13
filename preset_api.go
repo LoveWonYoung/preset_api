@@ -1,48 +1,92 @@
-// Package preset_api provides a pure-Go Windows binding for preset_rs.dll.
+//go:build windows && amd64
+
+// Package preset_api provides a pure-Go Windows AMD64 binding for preset_rs.dll.
 //
-// It deliberately uses package syscall instead of cgo. The DLL is loaded on
-// the first API call. Applications that keep the DLL outside the normal
-// Windows DLL search path should call LoadDLL before using any other function.
+// It deliberately uses package syscall instead of cgo. Applications must call
+// LoadDLL with an explicit path before using the API.
 package preset_api
 
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 	"unsafe"
 )
 
-const defaultDLLName = "preset_rs.dll"
+const maxDLLArguments = 8
+
+const (
+	loadLibrarySearchDLLLoadDir  = 0x00000100
+	loadLibrarySearchDefaultDirs = 0x00001000
+)
+
+var loadLibraryExW = syscall.NewLazyDLL("kernel32.dll").NewProc("LoadLibraryExW")
+
+// callArgument keeps Go pointers as pointers until the final syscall boundary.
+// This lets invoke pin them for the duration of Proc.Call instead of relying on
+// uintptr values surviving across helper calls.
+type callArgument struct {
+	value   uintptr
+	pointer unsafe.Pointer
+}
+
+type callResult struct {
+	r1 uintptr
+	r2 uintptr
+}
+
+type procLookup struct {
+	proc *syscall.Proc
+	err  error
+}
 
 var dllState struct {
 	sync.Mutex
 	dll     *syscall.DLL
 	path    string
 	loadErr error
-	procs   map[string]*syscall.Proc
 }
 
-// LoadDLL loads preset_rs from path. It is optional when preset_rs.dll is on
-// the Windows DLL search path. A process may bind to only one DLL path.
+var procCache sync.Map // map[string]procLookup; DLL is immutable after load.
+
+// LoadDLL loads preset_rs from an explicit path. Relative paths are resolved
+// against the current working directory before LoadLibrary is called, avoiding
+// the ambient Windows DLL search path. A process may bind to only one DLL.
 func LoadDLL(path string) error {
 	if path == "" {
 		return errors.New("preset_api: DLL path is empty")
 	}
+	absolutePath, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("preset_api: resolve DLL path %q: %w", path, err)
+	}
+	return loadDLL(filepath.Clean(absolutePath))
+}
 
+func loadDLL(path string) error {
 	dllState.Lock()
 	if dllState.dll != nil {
 		loadedPath := dllState.path
 		dllState.Unlock()
-		if loadedPath == path {
+		if strings.EqualFold(loadedPath, path) {
 			return nil
 		}
 		return fmt.Errorf("preset_api: DLL already loaded from %q", loadedPath)
 	}
 	dllState.Unlock()
 
-	dll, err := syscall.LoadDLL(path)
+	dll, err := secureLoadDLL(path)
+	if err == nil {
+		err = validateDLL(dll)
+		if err != nil {
+			_ = dll.Release()
+			dll = nil
+		}
+	}
 
 	dllState.Lock()
 	defer dllState.Unlock()
@@ -50,7 +94,7 @@ func LoadDLL(path string) error {
 		if dll != nil {
 			_ = dll.Release()
 		}
-		if dllState.path == path {
+		if strings.EqualFold(dllState.path, path) {
 			return nil
 		}
 		return fmt.Errorf("preset_api: DLL already loaded from %q", dllState.path)
@@ -62,7 +106,39 @@ func LoadDLL(path string) error {
 	dllState.dll = dll
 	dllState.path = path
 	dllState.loadErr = nil
-	dllState.procs = make(map[string]*syscall.Proc)
+	return nil
+}
+
+func secureLoadDLL(path string) (*syscall.DLL, error) {
+	pathPointer, err := syscall.UTF16PtrFromString(path)
+	if err != nil {
+		return nil, err
+	}
+	var pinner runtime.Pinner
+	pinner.Pin(pathPointer)
+	defer pinner.Unpin()
+	handle, _, callErr := loadLibraryExW.Call(
+		uintptr(unsafe.Pointer(pathPointer)),
+		0,
+		loadLibrarySearchDLLLoadDir|loadLibrarySearchDefaultDirs,
+	)
+	runtime.KeepAlive(pathPointer)
+	if handle == 0 {
+		return nil, fmt.Errorf("LoadLibraryExW: %w", callErr)
+	}
+	return &syscall.DLL{Name: path, Handle: syscall.Handle(handle)}, nil
+}
+
+func validateDLL(dll *syscall.DLL) error {
+	proc, err := dll.FindProc("preset_abi_version")
+	if err != nil {
+		return fmt.Errorf("find preset_abi_version: %w", err)
+	}
+	value, _, _ := proc.Call()
+	version := uint32(value)
+	if version != SupportedABIVersion {
+		return fmt.Errorf("unsupported ABI version %d (want %d)", version, SupportedABIVersion)
+	}
 	return nil
 }
 
@@ -74,139 +150,164 @@ func DLLLoadError() error {
 }
 
 func findProc(name string) (*syscall.Proc, error) {
-	dllState.Lock()
-	if dllState.dll != nil {
-		if proc := dllState.procs[name]; proc != nil {
-			dllState.Unlock()
-			return proc, nil
-		}
-		dll := dllState.dll
-		dllState.Unlock()
-		proc, err := dll.FindProc(name)
-		if err != nil {
-			dllState.Lock()
-			dllState.loadErr = fmt.Errorf("preset_api: find symbol %q: %w", name, err)
-			dllState.Unlock()
-			return nil, err
-		}
-		dllState.Lock()
-		if existing := dllState.procs[name]; existing != nil {
-			proc = existing
-		} else {
-			dllState.procs[name] = proc
-		}
-		dllState.Unlock()
-		return proc, nil
+	if cached, ok := procCache.Load(name); ok {
+		lookup := cached.(procLookup)
+		return lookup.proc, lookup.err
 	}
-	dllState.Unlock()
 
-	if err := LoadDLL(defaultDLLName); err != nil {
+	dllState.Lock()
+	dll := dllState.dll
+	dllState.Unlock()
+	if dll == nil {
+		err := errors.New("preset_api: DLL is not loaded; call LoadDLL first")
+		dllState.Lock()
+		dllState.loadErr = err
+		dllState.Unlock()
 		return nil, err
 	}
-	return findProc(name)
+
+	proc, err := dll.FindProc(name)
+	lookup := procLookup{proc: proc}
+	if err != nil {
+		lookup.proc = nil
+		lookup.err = fmt.Errorf("preset_api: find symbol %q: %w", name, err)
+		dllState.Lock()
+		dllState.loadErr = lookup.err
+		dllState.Unlock()
+	}
+	actual, _ := procCache.LoadOrStore(name, lookup)
+	lookup = actual.(procLookup)
+	return lookup.proc, lookup.err
 }
 
-func invoke(name string, args ...uintptr) (uintptr, bool) {
+func invoke(name string, args ...callArgument) (callResult, error) {
 	proc, err := findProc(name)
 	if err != nil {
-		return 0, false
+		return callResult{}, err
 	}
-	r1, _, _ := proc.Call(args...)
-	return r1, true
+	if len(args) > maxDLLArguments {
+		err := fmt.Errorf("preset_api: call %q has %d arguments; maximum is %d", name, len(args), maxDLLArguments)
+		dllState.Lock()
+		dllState.loadErr = err
+		dllState.Unlock()
+		return callResult{}, err
+	}
+
+	var values [maxDLLArguments]uintptr
+	var pinner runtime.Pinner
+	pinned := false
+	for index, argument := range args {
+		if argument.pointer != nil {
+			pinner.Pin(argument.pointer)
+			if !pinned {
+				pinned = true
+				defer pinner.Unpin()
+			}
+			values[index] = uintptr(argument.pointer)
+		} else {
+			values[index] = argument.value
+		}
+	}
+
+	r1, r2, _ := proc.Call(values[:len(args)]...)
+	runtime.KeepAlive(args)
+	return callResult{r1: r1, r2: r2}, nil
 }
 
-func invokeStatus(name string, args ...uintptr) int32 {
-	r1, ok := invoke(name, args...)
-	if !ok {
+func invokeStatus(name string, args ...callArgument) int32 {
+	result, err := invoke(name, args...)
+	if err != nil {
 		return PRESET_ERR_TRANSPORT
 	}
-	return int32(uint32(r1))
+	return int32(uint32(result.r1))
 }
 
-func pointer[T any](value *T) uintptr {
-	return uintptr(unsafe.Pointer(value))
+func word(value uintptr) callArgument {
+	return callArgument{value: value}
 }
 
-func slicePointer[T any](values []T) uintptr {
+func pointer[T any](value *T) callArgument {
+	return rawPointer(unsafe.Pointer(value))
+}
+
+func rawPointer(value unsafe.Pointer) callArgument {
+	return callArgument{pointer: value}
+}
+
+func slicePointer[T any](values []T) callArgument {
 	if len(values) == 0 {
-		return 0
+		return callArgument{}
 	}
-	return uintptr(unsafe.Pointer(&values[0]))
+	return pointer(&values[0])
 }
 
-// Version returns the preset_rs semantic version, or an empty string when the
-// DLL could not be loaded. DLLLoadError provides the load failure details.
-func Version() string {
-	address, ok := invoke("preset_version")
-	if !ok || address == 0 {
-		return ""
+// Version returns the preset_rs semantic version.
+//
+//go:nocheckptr
+func Version() (string, error) {
+	result, err := invoke("preset_version")
+	address := result.r1
+	if err != nil {
+		return "", err
+	}
+	if address == 0 {
+		return "", errors.New("preset_api: preset_version returned null")
 	}
 	const maxVersionLength = 4096
+	bytes := unsafe.Slice((*byte)(unsafe.Pointer(address)), maxVersionLength)
 	length := 0
-	for length < maxVersionLength && *(*byte)(unsafe.Pointer(address + uintptr(length))) != 0 {
+	for length < maxVersionLength && bytes[length] != 0 {
 		length++
 	}
 	if length == maxVersionLength {
-		return ""
+		return "", errors.New("preset_api: preset_version is not null-terminated")
 	}
-	return unsafe.String((*byte)(unsafe.Pointer(address)), length)
+	return string(bytes[:length]), nil
 }
 
 // ABIVersion returns the exported C ABI version.
-func ABIVersion() uint32 {
-	value, _ := invoke("preset_abi_version")
-	return uint32(value)
+func ABIVersion() (uint32, error) {
+	result, err := invoke("preset_abi_version")
+	return uint32(result.r1), err
 }
 
 // Capabilities returns the PRESET_CAP_* bit set advertised by the DLL.
-func Capabilities() uint64 {
-	value, _ := invoke("preset_get_capabilities")
-	return uint64(value)
+func Capabilities() (uint64, error) {
+	result, err := invoke("preset_get_capabilities")
+	return uint64(result.r1), err
 }
 
-// Structs larger than eight bytes use the Microsoft x64 hidden return-buffer
-// parameter. PresetToomossLinConfig is exactly eight bytes and is returned in
-// RAX instead.
-func callStruct(name string, destination unsafe.Pointer) bool {
-	_, ok := invoke(name, uintptr(destination))
-	runtime.KeepAlive(destination)
-	return ok
+func DefaultConfig() (config PresetConfig, err error) {
+	err = callStruct("preset_default_config", unsafe.Pointer(&config), unsafe.Sizeof(config))
+	return config, err
 }
 
-func DefaultConfig() (config PresetConfig) {
-	callStruct("preset_default_config", unsafe.Pointer(&config))
-	return
+func ToomossDefaultConfig() (config PresetToomossConfig, err error) {
+	err = callStruct("preset_toomoss_default_config", unsafe.Pointer(&config), unsafe.Sizeof(config))
+	return config, err
 }
 
-func ToomossDefaultConfig() (config PresetToomossConfig) {
-	callStruct("preset_toomoss_default_config", unsafe.Pointer(&config))
-	return
+func ToomossLinDefaultConfig() (config PresetToomossLinConfig, err error) {
+	err = callStruct("preset_toomoss_lin_default_config", unsafe.Pointer(&config), unsafe.Sizeof(config))
+	return config, err
 }
 
-func ToomossLinDefaultConfig() (config PresetToomossLinConfig) {
-	value, ok := invoke("preset_toomoss_lin_default_config")
-	if ok {
-		*(*uint64)(unsafe.Pointer(&config)) = uint64(value)
-	}
-	return
+func ToomossElinsDefaultConfig() (config PresetToomossElinsConfig, err error) {
+	err = callStruct("preset_toomoss_elins_default_config", unsafe.Pointer(&config), unsafe.Sizeof(config))
+	return config, err
 }
 
-func ToomossElinsDefaultConfig() (config PresetToomossElinsConfig) {
-	callStruct("preset_toomoss_elins_default_config", unsafe.Pointer(&config))
-	return
+func PcanDefaultConfig() (config PresetPCANConfig, err error) {
+	err = callStruct("preset_pcan_default_config", unsafe.Pointer(&config), unsafe.Sizeof(config))
+	return config, err
 }
 
-func PcanDefaultConfig() (config PresetPCANConfig) {
-	callStruct("preset_pcan_default_config", unsafe.Pointer(&config))
-	return
+func TsmasterDefaultConfig() (config PresetTSMasterConfig, err error) {
+	err = callStruct("preset_tsmaster_default_config", unsafe.Pointer(&config), unsafe.Sizeof(config))
+	return config, err
 }
 
-func TsmasterDefaultConfig() (config PresetTSMasterConfig) {
-	callStruct("preset_tsmaster_default_config", unsafe.Pointer(&config))
-	return
-}
-
-func VectorDefaultConfig() (config PresetVectorConfig) {
-	callStruct("preset_vector_default_config", unsafe.Pointer(&config))
-	return
+func VectorDefaultConfig() (config PresetVectorConfig, err error) {
+	err = callStruct("preset_vector_default_config", unsafe.Pointer(&config), unsafe.Sizeof(config))
+	return config, err
 }

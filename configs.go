@@ -1,3 +1,5 @@
+//go:build windows && amd64
+
 package preset_api
 
 type PresetConfig struct {

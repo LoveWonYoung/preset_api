@@ -1,7 +1,8 @@
+//go:build windows && amd64
+
 package preset_api
 
 import (
-	"runtime"
 	"syscall"
 )
 
@@ -12,35 +13,34 @@ func LogInit(name string) int32 {
 	if err != nil {
 		return PRESET_ERR_INVALID_ARG
 	}
-	status := invokeStatus("preset_log_init", pointer(value))
-	runtime.KeepAlive(value)
-	return status
+	return invokeStatus("preset_log_init", pointer(value))
 }
 
-func LogShutdown() {
-	_, _ = invoke("preset_log_shutdown")
+func LogShutdown() error {
+	_, err := invoke("preset_log_shutdown")
+	return err
 }
 
-func SetPrintLog(enable bool) {
+func SetPrintLog(enable bool) error {
 	var value uintptr
 	if enable {
 		value = 1
 	}
-	_, _ = invoke("preset_set_print_log", value)
+	_, err := invoke("preset_set_print_log", word(value))
+	return err
 }
 
-func LogDroppedCount() uint64 {
-	value, _ := invoke("preset_log_dropped_count")
-	return uint64(value)
+func LogDroppedCount() (uint64, error) {
+	result, err := invoke("preset_log_dropped_count")
+	return uint64(result.r1), err
 }
 
 func SetLogFilter(mode uint8, ids []uint32) int32 {
 	status := invokeStatus(
 		"preset_set_log_filter",
-		uintptr(mode),
+		word(uintptr(mode)),
 		slicePointer(ids),
-		uintptr(len(ids)),
+		word(uintptr(len(ids))),
 	)
-	runtime.KeepAlive(ids)
 	return status
 }

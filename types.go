@@ -1,13 +1,71 @@
+//go:build windows && amd64
+
 package preset_api
 
-// Opaque handles owned by preset_rs.dll. A zero value is a null handle.
-// Close functions clear the caller's handle after releasing it.
-type PresetDevice uintptr
-type PresetCanUdsClient uintptr
-type PresetLinUdsClient uintptr
+import "sync"
+
+// SupportedABIVersion is the only preset_rs C ABI accepted by this binding.
+const SupportedABIVersion uint32 = 4
+
+// handleState serializes close against calls using the same native handle.
+// Wrappers are intentionally cheap to copy: every copy shares this state.
+type handleState struct {
+	sync.RWMutex
+	value uintptr
+}
+
+type PresetDevice struct{ state *handleState }
+type PresetCanUdsClient struct{ state *handleState }
+type PresetLinUdsClient struct{ state *handleState }
+
+func newHandle(value uintptr) *handleState {
+	if value == 0 {
+		return nil
+	}
+	return &handleState{value: value}
+}
+
+func withHandle(state *handleState, call func(uintptr) int32) int32 {
+	if state == nil {
+		return call(0)
+	}
+	state.RLock()
+	defer state.RUnlock()
+	return call(state.value)
+}
+
+func closeHandle(state *handleState, symbol string) int32 {
+	if state == nil {
+		return PRESET_OK
+	}
+	state.Lock()
+	defer state.Unlock()
+	value := state.value
+	if value == 0 {
+		return PRESET_OK
+	}
+	status := invokeStatus(symbol, pointer(&value))
+	// The C contract owns the pointer update. Device close, for example, may
+	// consume the handle while returning a non-zero backend shutdown status.
+	state.value = value
+	return status
+}
+
+func (device PresetDevice) IsClosed() bool       { return handleClosed(device.state) }
+func (client PresetCanUdsClient) IsClosed() bool { return handleClosed(client.state) }
+func (client PresetLinUdsClient) IsClosed() bool { return handleClosed(client.state) }
+
+func handleClosed(state *handleState) bool {
+	if state == nil {
+		return true
+	}
+	state.RLock()
+	defer state.RUnlock()
+	return state.value == 0
+}
 
 const (
-	PRESET_OK = -iota
+	PRESET_OK int32 = -iota
 	PRESET_ERR_NULL_PTR
 	PRESET_ERR_BUFFER_TOO_SMALL
 	PRESET_ERR_NOT_INIT
