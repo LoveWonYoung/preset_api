@@ -171,7 +171,7 @@ func (d *MyDevice) Open(dllPath string) (err error) {
 		var client PresetCanUdsClient
 		if err = checkCall("preset_can_uds_client_new", func() int32 {
 			var status int32
-			client, status = CanUdsClientNew(d.device, channel, &cfg)
+			client, status = CanClientNew(d.device, channel, &cfg)
 			return status
 		}); err != nil {
 			return err
@@ -189,7 +189,7 @@ func (d *MyDevice) Txfn(canID uint32, data []byte, channel ...uint8) error {
 		return err
 	}
 	return checkCall("preset_can_uds_write", func() int32 {
-		return CanUdsWrite(client, canID, d.IsFD, data)
+		return CanWrite(client, canID, d.IsFD, data)
 	})
 }
 

@@ -4,7 +4,7 @@ package preset_api
 
 import "runtime"
 
-func CanUdsClientNew(device PresetDevice, channel uint8, config *PresetConfig) (client PresetCanUdsClient, status int32) {
+func CanClientNew(device PresetDevice, channel uint8, config *PresetConfig) (client PresetCanUdsClient, status int32) {
 	var handle uintptr
 	status = withHandle(device.state, func(deviceHandle uintptr) int32 {
 		return invokeStatus(
@@ -58,7 +58,7 @@ func CanUdsSetManualFlowControl(client PresetCanUdsClient, enabled bool) int32 {
 	})
 }
 
-func CanUdsSetBRS(client PresetCanUdsClient, enabled bool) int32 {
+func CanSetBRS(client PresetCanUdsClient, enabled bool) int32 {
 	var value uintptr
 	if enabled {
 		value = 1
@@ -68,7 +68,7 @@ func CanUdsSetBRS(client PresetCanUdsClient, enabled bool) int32 {
 	})
 }
 
-func CanUdsGetBRS(client PresetCanUdsClient) (enabled bool, status int32) {
+func CanGetBRS(client PresetCanUdsClient) (enabled bool, status int32) {
 	var value uint8
 	status = withHandle(client.state, func(handle uintptr) int32 {
 		return invokeStatus("preset_can_uds_get_brs", word(handle), pointer(&value))
@@ -86,7 +86,7 @@ func CanUdsSetRawTxEcho(client PresetCanUdsClient, enabled bool) int32 {
 	})
 }
 
-func CanUdsWrite(client PresetCanUdsClient, id uint32, isFD bool, data []byte) int32 {
+func CanWrite(client PresetCanUdsClient, id uint32, isFD bool, data []byte) int32 {
 	var fd uintptr
 	if isFD {
 		fd = 1
@@ -99,7 +99,7 @@ func CanUdsWrite(client PresetCanUdsClient, id uint32, isFD bool, data []byte) i
 	})
 }
 
-func CanUdsTryRead(client PresetCanUdsClient, frames []PresetCanFrame) (count int, status int32) {
+func CanTryRead(client PresetCanUdsClient, frames []PresetCanFrame) (count int, status int32) {
 	length := uintptr(len(frames))
 	status = withHandle(client.state, func(handle uintptr) int32 {
 		return invokeStatus(
@@ -121,14 +121,14 @@ func CanUdsTryReadEx(client PresetCanUdsClient, frames []PresetCanFrameEx) (coun
 	return int(length), status
 }
 
-func CanUdsRxGetStats(client PresetCanUdsClient) (stats PresetRxStats, status int32) {
+func CanRxGetStats(client PresetCanUdsClient) (stats PresetRxStats, status int32) {
 	status = withHandle(client.state, func(handle uintptr) int32 {
 		return invokeStatus("preset_can_uds_rx_get_stats", word(handle), pointer(&stats))
 	})
 	return
 }
 
-func CanUdsSetBusLoadEnabled(client PresetCanUdsClient, enabled bool) int32 {
+func CanSetBusLoadEnabled(client PresetCanUdsClient, enabled bool) int32 {
 	var value uintptr
 	if enabled {
 		value = 1
@@ -138,14 +138,14 @@ func CanUdsSetBusLoadEnabled(client PresetCanUdsClient, enabled bool) int32 {
 	})
 }
 
-func CanUdsGetBusLoad(client PresetCanUdsClient) (load PresetBusLoad, status int32) {
+func CanGetBusLoad(client PresetCanUdsClient) (load PresetBusLoad, status int32) {
 	status = withHandle(client.state, func(handle uintptr) int32 {
 		return invokeStatus("preset_can_uds_get_bus_load", word(handle), pointer(&load))
 	})
 	return
 }
 
-func CanUdsLastError(client PresetCanUdsClient, out []byte) (count int, status int32) {
+func CanLastError(client PresetCanUdsClient, out []byte) (count int, status int32) {
 	return canUdsLastError(client.state, out)
 }
 

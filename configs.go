@@ -196,7 +196,7 @@ type PresetCanFrame struct {
 }
 
 // PresetCanFrameEx includes DLC, direction, CAN-FD, and BRS metadata. Do not
-// mix CanUdsTryRead and CanUdsTryReadEx on one client; both drain the same ring.
+// mix CanTryRead and CanUdsTryReadEx on one client; both drain the same ring.
 type PresetCanFrameEx struct {
 	ID        uint32
 	DLC       uint8
