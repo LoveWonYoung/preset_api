@@ -86,7 +86,7 @@ type MyDevice struct {
 }
 
 // NewMyDevice builds a closed device. deviceType 0 selects the backend default
-// (TSMaster TC1016, Vector ANY). Set optional fields before Open.
+// (TSMaster TC1016, Vector ANY). Pass the DLL path to Open.
 func NewMyDevice(backend Backend, physID, respID, funcID uint32, channels []uint8, deviceType int32) (*MyDevice, error) {
 	if len(channels) == 0 {
 		return nil, errors.New("channels must not be empty")
@@ -112,7 +112,10 @@ func NewMyDevice(backend Backend, physID, respID, funcID uint32, channels []uint
 // Open loads the DLL, opens the adapter, inits every channel, then creates one
 // UDS client per channel. Extra TSMaster/PCAN/Vector channels are initialized
 // before any client is created.
-func (d *MyDevice) Open() (err error) {
+//
+// dllPath is the explicit path to preset_rs.dll. An empty string falls back to
+// DLLPath, then to preset_rs.dll in the current working directory.
+func (d *MyDevice) Open(dllPath string) (err error) {
 	if d == nil {
 		return errors.New("MyDevice is nil")
 	}
@@ -126,7 +129,10 @@ func (d *MyDevice) Open() (err error) {
 		d.clients = make(map[uint8]PresetCanUdsClient)
 	}
 
-	path := d.DLLPath
+	path := dllPath
+	if path == "" {
+		path = d.DLLPath
+	}
 	if path == "" {
 		wd, wdErr := os.Getwd()
 		if wdErr != nil {
@@ -134,6 +140,7 @@ func (d *MyDevice) Open() (err error) {
 		}
 		path = filepath.Join(wd, "preset_rs.dll")
 	}
+	d.DLLPath = path
 	if err = LoadDLL(path); err != nil {
 		return err
 	}

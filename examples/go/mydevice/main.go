@@ -39,8 +39,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	device.DLLPath = dllPath
-	if err := device.Open(); err != nil {
+	if err := device.Open(dllPath); err != nil {
 		return err
 	}
 	defer device.Close()
