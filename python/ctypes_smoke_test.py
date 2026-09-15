@@ -1,7 +1,7 @@
 """ABI v5 ctypes smoke test for preset_rs.dll.
 
 Usage:
-    python ctypes_smoke_test.py C:\\path\\to\\preset_rs.dll
+    python python/ctypes_smoke_test.py C:\\path\\to\\preset_rs.dll
 
 The test only calls metadata/default-value functions, so no CAN/LIN hardware is
 required. It also binds every CAN/LIN symbol added in ABI v5.

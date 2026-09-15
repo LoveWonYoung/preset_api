@@ -3,6 +3,15 @@
 `preset_api` 是 `preset_rs.dll` 的纯 Go 绑定，仅支持 Windows AMD64。实现只使用
 标准库 `syscall`，不使用 cgo。
 
+仓库根目录是 Go 包；`python/` 是 ctypes 绑定和 `MyDevice` 二次封装；可运行示例在
+`examples/go/` 与 `examples/python/`。
+
+```powershell
+go run ./examples/go/mydevice
+python examples/python/mydevice.py
+python examples/python/tsmaster_rx.py
+```
+
 ## 使用
 
 程序必须先用明确路径加载 DLL。相对路径会在调用 Windows `LoadLibrary` 之前转换为
@@ -107,7 +116,7 @@ $env:PRESET_RS_DLL = 'C:\path\to\preset_rs.dll'
 go test -v ./...
 
 # 使用 Python ctypes 检查 ABI v5 结构体、默认值及新增 CAN/LIN 调用签名
-python ctypes_smoke_test.py $env:PRESET_RS_DLL
+python python/ctypes_smoke_test.py $env:PRESET_RS_DLL
 ```
 
 从非 Windows 主机只做编译检查：
