@@ -20,6 +20,24 @@ type PresetConfig struct {
 	Reserved       [2]uint8
 }
 
+// PresetTpFrameConfig controls stateless ISO-TP frame encoding. When padding
+// is enabled, frames are extended to at least 8 bytes and CAN-FD frames are
+// rounded up to a legal DLC with PaddingByte.
+type PresetTpFrameConfig struct {
+	IsFD           uint8
+	PaddingEnabled uint8
+	PaddingByte    uint8
+	Reserved       uint8
+}
+
+// PresetTpEncodedFrame is one complete CAN data field returned by
+// CanTpBuildFrames.
+type PresetTpEncodedFrame struct {
+	DataLen  uint8
+	Reserved [7]uint8
+	Data     [64]uint8
+}
+
 type PresetCanFdTiming struct {
 	NominalBRP   uint32
 	NominalTSEG1 uint32

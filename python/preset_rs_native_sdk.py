@@ -70,9 +70,17 @@ PRESET_CAP_PCAN_LIN = 1 << 21
 PRESET_CAP_TSMASTER_LIN = 1 << 22
 PRESET_CAP_VECTOR_LIN = 1 << 23
 PRESET_CAP_RAW_CAN_TIMESTAMP = 1 << 24
+PRESET_CAP_MANUAL_ISOTP_FRAMING = 1 << 25
+PRESET_CAP_DEVICE_RAW_CAN = 1 << 26
+PRESET_CAP_MANUAL_TP_MODE = 1 << 27
+PRESET_CAP_TP_FRAME_BUILDER = 1 << 28
 
 PRESET_CAN_DIRECTION_TX = 0
 PRESET_CAN_DIRECTION_RX = 1
+
+PRESET_TP_FLOW_CONTINUE_TO_SEND = 0
+PRESET_TP_FLOW_WAIT = 1
+PRESET_TP_FLOW_OVERFLOW = 2
 
 PRESET_CAN_BACKEND_NONE = 0
 PRESET_CAN_BACKEND_TOOMOSS = 1
@@ -212,6 +220,27 @@ class PresetConfig(_PresetStructure):
         ("raw_rx_enabled", ctypes.c_uint8),
         ("reserved", ctypes.c_uint8 * 2),
     ]
+
+
+class PresetTpFrameConfig(_PresetStructure):
+    _fields_ = [
+        ("is_fd", ctypes.c_uint8),
+        ("padding_enabled", ctypes.c_uint8),
+        ("padding_byte", ctypes.c_uint8),
+        ("reserved", ctypes.c_uint8),
+    ]
+
+
+class PresetTpEncodedFrame(_PresetStructure):
+    _fields_ = [
+        ("data_len", ctypes.c_uint8),
+        ("reserved", ctypes.c_uint8 * 7),
+        ("data", ctypes.c_uint8 * 64),
+    ]
+
+    @property
+    def payload(self) -> bytes:
+        return bytes(self.data[: self.data_len])
 
 
 class PresetCanFdTiming(_PresetStructure):
@@ -560,6 +589,7 @@ class PresetRSNativeSDK:
         _bind(d.preset_get_capabilities, [], ctypes.c_uint64)
         for name, structure in (
             ("preset_default_config", PresetConfig),
+            ("preset_tp_frame_default_config", PresetTpFrameConfig),
             ("preset_auto_default_config", PresetAutoConfig),
             ("preset_pcan_default_fd_timing", PresetCanFdTiming),
             ("preset_toomoss_default_fd_timing", PresetCanFdTiming),
@@ -628,6 +658,64 @@ class PresetRSNativeSDK:
         _bind(d.preset_vector_open, [ctypes.POINTER(PresetVectorConfig), ctypes.POINTER(DeviceHandle)], status)
         _bind(d.preset_vector_can_init, [DeviceHandle, ctypes.POINTER(PresetVectorConfig)], status)
 
+        tp_config = ctypes.POINTER(PresetTpFrameConfig)
+        _bind(d.preset_can_write, [DeviceHandle, u8, u32, u8, _U8P, size], status)
+        _bind(
+            d.preset_can_try_read,
+            [DeviceHandle, u8, ctypes.POINTER(PresetCanFrame), _SIZEP],
+            status,
+        )
+        _bind(
+            d.preset_can_try_read_ex,
+            [DeviceHandle, u8, ctypes.POINTER(PresetCanFrameEx), _SIZEP],
+            status,
+        )
+        _bind(
+            d.preset_can_tp_encode_single_frame,
+            [tp_config, _U8P, size, _U8P, size, _SIZEP],
+            status,
+        )
+        _bind(
+            d.preset_can_tp_encode_first_frame,
+            [tp_config, _U8P, size, u32, _U8P, size, _SIZEP],
+            status,
+        )
+        _bind(
+            d.preset_can_tp_encode_flow_control_frame,
+            [tp_config, u8, u8, u8, _U8P, size, _SIZEP],
+            status,
+        )
+        _bind(
+            d.preset_can_tp_encode_consecutive_frame,
+            [tp_config, _U8P, size, u8, _U8P, size, _SIZEP],
+            status,
+        )
+        _bind(
+            d.preset_can_tp_build_frames,
+            [_U8P, size, u8, u8, ctypes.POINTER(PresetTpEncodedFrame), _SIZEP],
+            status,
+        )
+        _bind(
+            d.preset_can_tp_write_single_frame,
+            [DeviceHandle, u8, u32, tp_config, _U8P, size],
+            status,
+        )
+        _bind(
+            d.preset_can_tp_write_first_frame,
+            [DeviceHandle, u8, u32, tp_config, _U8P, size, u32],
+            status,
+        )
+        _bind(
+            d.preset_can_tp_write_flow_control_frame,
+            [DeviceHandle, u8, u32, tp_config, u8, u8, u8],
+            status,
+        )
+        _bind(
+            d.preset_can_tp_write_consecutive_frame,
+            [DeviceHandle, u8, u32, tp_config, _U8P, size, u8],
+            status,
+        )
+
         _bind(d.preset_pcan_lin_open, [ctypes.POINTER(PresetPCANLinConfig), ctypes.POINTER(DeviceHandle)], status)
         _bind(d.preset_pcan_lin_init, [DeviceHandle, ctypes.POINTER(PresetPCANLinConfig)], status)
         _bind(
@@ -660,10 +748,31 @@ class PresetRSNativeSDK:
         _bind(d.preset_can_uds_set_default_st_min, [CanClientHandle, u32], status)
         _bind(d.preset_can_uds_set_default_block_size, [CanClientHandle, u32], status)
         _bind(d.preset_can_uds_set_manual_flow_control, [CanClientHandle, u8], status)
+        _bind(d.preset_can_uds_set_manual_tp_mode, [CanClientHandle, u8], status)
         _bind(d.preset_can_uds_set_brs, [CanClientHandle, u8], status)
         _bind(d.preset_can_uds_get_brs, [CanClientHandle, _U8P], status)
         _bind(d.preset_can_uds_set_raw_tx_echo, [CanClientHandle, u8], status)
         _bind(d.preset_can_uds_write, [CanClientHandle, u32, u8, _U8P, size], status)
+        _bind(
+            d.preset_can_uds_tp_write_single_frame,
+            [CanClientHandle, u32, tp_config, _U8P, size],
+            status,
+        )
+        _bind(
+            d.preset_can_uds_tp_write_first_frame,
+            [CanClientHandle, u32, tp_config, _U8P, size, u32],
+            status,
+        )
+        _bind(
+            d.preset_can_uds_tp_write_flow_control_frame,
+            [CanClientHandle, u32, tp_config, u8, u8, u8],
+            status,
+        )
+        _bind(
+            d.preset_can_uds_tp_write_consecutive_frame,
+            [CanClientHandle, u32, tp_config, _U8P, size, u8],
+            status,
+        )
         _bind(
             d.preset_can_uds_try_read,
             [CanClientHandle, ctypes.POINTER(PresetCanFrame), _SIZEP],
@@ -716,6 +825,111 @@ class PresetRSNativeSDK:
 
     def default_config(self) -> PresetConfig:
         return self.dll.preset_default_config()
+
+    def tp_frame_default_config(self) -> PresetTpFrameConfig:
+        return self.dll.preset_tp_frame_default_config()
+
+    def _encode_tp_data_frame(
+        self,
+        name: str,
+        config: PresetTpFrameConfig | None,
+        data,
+        *middle: int,
+    ) -> bytes:
+        raw, array = _byte_input(data)
+        output = (ctypes.c_uint8 * 64)()
+        count = ctypes.c_size_t()
+        config_pointer = ctypes.byref(config) if config is not None else None
+        status = getattr(self.dll, name)(
+            config_pointer, array, len(raw), *middle,
+            output, len(output), ctypes.byref(count),
+        )
+        if status == PRESET_ERR_BUFFER_TOO_SMALL:
+            raise PresetError(status, name, f"frame requires {count.value} bytes")
+        self._check(status, name)
+        if count.value > len(output):
+            raise RuntimeError(f"{name} returned invalid length {count.value}")
+        return bytes(output[: count.value])
+
+    def tp_encode_single_frame(
+        self, data, config: PresetTpFrameConfig | None = None
+    ) -> bytes:
+        return self._encode_tp_data_frame(
+            "preset_can_tp_encode_single_frame", config, data
+        )
+
+    def tp_encode_first_frame(
+        self,
+        first_chunk,
+        total_message_size: int,
+        config: PresetTpFrameConfig | None = None,
+    ) -> bytes:
+        return self._encode_tp_data_frame(
+            "preset_can_tp_encode_first_frame",
+            config,
+            first_chunk,
+            total_message_size,
+        )
+
+    def tp_encode_flow_control_frame(
+        self,
+        flow_status: int,
+        block_size: int,
+        st_min: int,
+        config: PresetTpFrameConfig | None = None,
+    ) -> bytes:
+        output = (ctypes.c_uint8 * 64)()
+        count = ctypes.c_size_t()
+        config_pointer = ctypes.byref(config) if config is not None else None
+        name = "preset_can_tp_encode_flow_control_frame"
+        status = getattr(self.dll, name)(
+            config_pointer, flow_status, block_size, st_min,
+            output, len(output), ctypes.byref(count),
+        )
+        if status == PRESET_ERR_BUFFER_TOO_SMALL:
+            raise PresetError(status, name, f"frame requires {count.value} bytes")
+        self._check(status, name)
+        if count.value > len(output):
+            raise RuntimeError(f"{name} returned invalid length {count.value}")
+        return bytes(output[: count.value])
+
+    def tp_encode_consecutive_frame(
+        self,
+        data_chunk,
+        sequence_number: int,
+        config: PresetTpFrameConfig | None = None,
+    ) -> bytes:
+        return self._encode_tp_data_frame(
+            "preset_can_tp_encode_consecutive_frame",
+            config,
+            data_chunk,
+            sequence_number,
+        )
+
+    def tp_build_frames(
+        self, payload, *, is_fd: bool = False, padding_byte: int = 0xAA
+    ) -> list[PresetTpEncodedFrame]:
+        raw, array = _byte_input(payload)
+        count = ctypes.c_size_t()
+        name = "preset_can_tp_build_frames"
+        status = getattr(self.dll, name)(
+            array, len(raw), bool(is_fd), padding_byte, None, ctypes.byref(count)
+        )
+        if status != PRESET_ERR_BUFFER_TOO_SMALL:
+            self._check(status, name)
+        if count.value == 0:
+            return []
+        frames = (PresetTpEncodedFrame * count.value)()
+        capacity = count.value
+        status = getattr(self.dll, name)(
+            array, len(raw), bool(is_fd), padding_byte, frames, ctypes.byref(count)
+        )
+        self._check(status, name)
+        if count.value > capacity:
+            raise RuntimeError(
+                f"{name} returned invalid frame count {count.value} for capacity {capacity}"
+            )
+        return list(frames[: count.value])
 
     def auto_default_config(self) -> PresetAutoConfig:
         return self.dll.preset_auto_default_config()
@@ -979,6 +1193,108 @@ class PresetDevice(_NativeHandle):
                 raise RuntimeError("preset_lin_uds_client_new succeeded but returned NULL")
             return PresetLinUdsClient(self._sdk, handle, self)
 
+    def can_write(self, channel: int, can_id: int, data, *, is_fd: bool = False) -> None:
+        raw, array = _byte_input(data)
+        name = "preset_can_write"
+        with self._lock:
+            self._sdk._check(
+                getattr(self._sdk.dll, name)(
+                    self._require_handle(), channel, can_id, bool(is_fd), array, len(raw)
+                ),
+                name,
+            )
+
+    def can_try_read(self, channel: int, capacity: int = 256) -> list[PresetCanFrame]:
+        return self._read_many("preset_can_try_read", PresetCanFrame, channel, capacity)
+
+    def can_try_read_ex(self, channel: int, capacity: int = 256) -> list[PresetCanFrameEx]:
+        return self._read_many("preset_can_try_read_ex", PresetCanFrameEx, channel, capacity)
+
+    def _tp_write_data(
+        self,
+        name: str,
+        channel: int,
+        can_id: int,
+        config: PresetTpFrameConfig | None,
+        data,
+        *tail: int,
+    ) -> None:
+        raw, array = _byte_input(data)
+        config_pointer = ctypes.byref(config) if config is not None else None
+        with self._lock:
+            self._sdk._check(
+                getattr(self._sdk.dll, name)(
+                    self._require_handle(), channel, can_id, config_pointer,
+                    array, len(raw), *tail,
+                ),
+                name,
+            )
+
+    def tp_write_single_frame(
+        self,
+        channel: int,
+        can_id: int,
+        data,
+        config: PresetTpFrameConfig | None = None,
+    ) -> None:
+        self._tp_write_data(
+            "preset_can_tp_write_single_frame", channel, can_id, config, data
+        )
+
+    def tp_write_first_frame(
+        self,
+        channel: int,
+        can_id: int,
+        first_chunk,
+        total_message_size: int,
+        config: PresetTpFrameConfig | None = None,
+    ) -> None:
+        self._tp_write_data(
+            "preset_can_tp_write_first_frame",
+            channel,
+            can_id,
+            config,
+            first_chunk,
+            total_message_size,
+        )
+
+    def tp_write_flow_control_frame(
+        self,
+        channel: int,
+        can_id: int,
+        flow_status: int,
+        block_size: int,
+        st_min: int,
+        config: PresetTpFrameConfig | None = None,
+    ) -> None:
+        name = "preset_can_tp_write_flow_control_frame"
+        config_pointer = ctypes.byref(config) if config is not None else None
+        with self._lock:
+            self._sdk._check(
+                getattr(self._sdk.dll, name)(
+                    self._require_handle(), channel, can_id, config_pointer,
+                    flow_status, block_size, st_min,
+                ),
+                name,
+            )
+
+    def tp_write_consecutive_frame(
+        self,
+        channel: int,
+        can_id: int,
+        data_chunk,
+        sequence_number: int,
+        config: PresetTpFrameConfig | None = None,
+    ) -> None:
+        self._tp_write_data(
+            "preset_can_tp_write_consecutive_frame",
+            channel,
+            can_id,
+            config,
+            data_chunk,
+            sequence_number,
+        )
+
     def _write(self, name: str, channel: int, frame_id: int, data) -> None:
         raw, array = _byte_input(data)
         with self._lock:
@@ -1108,6 +1424,9 @@ class PresetCanUdsClient(_NativeHandle):
     def set_manual_flow_control(self, enabled: bool) -> None:
         self._simple("preset_can_uds_set_manual_flow_control", bool(enabled))
 
+    def set_manual_tp_mode(self, enabled: bool) -> None:
+        self._simple("preset_can_uds_set_manual_tp_mode", bool(enabled))
+
     def set_brs(self, enabled: bool) -> None:
         self._simple("preset_can_uds_set_brs", bool(enabled))
 
@@ -1140,6 +1459,84 @@ class PresetCanUdsClient(_NativeHandle):
                 ),
                 "preset_can_uds_write",
             )
+
+    def _tp_write_data(
+        self,
+        name: str,
+        can_id: int,
+        config: PresetTpFrameConfig | None,
+        data,
+        *tail: int,
+    ) -> None:
+        raw, array = _byte_input(data)
+        config_pointer = ctypes.byref(config) if config is not None else None
+        with self._lock:
+            self._sdk._check(
+                getattr(self._sdk.dll, name)(
+                    self._require_handle(), can_id, config_pointer,
+                    array, len(raw), *tail,
+                ),
+                name,
+            )
+
+    def tp_write_single_frame(
+        self,
+        can_id: int,
+        data,
+        config: PresetTpFrameConfig | None = None,
+    ) -> None:
+        self._tp_write_data(
+            "preset_can_uds_tp_write_single_frame", can_id, config, data
+        )
+
+    def tp_write_first_frame(
+        self,
+        can_id: int,
+        first_chunk,
+        total_message_size: int,
+        config: PresetTpFrameConfig | None = None,
+    ) -> None:
+        self._tp_write_data(
+            "preset_can_uds_tp_write_first_frame",
+            can_id,
+            config,
+            first_chunk,
+            total_message_size,
+        )
+
+    def tp_write_flow_control_frame(
+        self,
+        can_id: int,
+        flow_status: int,
+        block_size: int,
+        st_min: int,
+        config: PresetTpFrameConfig | None = None,
+    ) -> None:
+        name = "preset_can_uds_tp_write_flow_control_frame"
+        config_pointer = ctypes.byref(config) if config is not None else None
+        with self._lock:
+            self._sdk._check(
+                getattr(self._sdk.dll, name)(
+                    self._require_handle(), can_id, config_pointer,
+                    flow_status, block_size, st_min,
+                ),
+                name,
+            )
+
+    def tp_write_consecutive_frame(
+        self,
+        can_id: int,
+        data_chunk,
+        sequence_number: int,
+        config: PresetTpFrameConfig | None = None,
+    ) -> None:
+        self._tp_write_data(
+            "preset_can_uds_tp_write_consecutive_frame",
+            can_id,
+            config,
+            data_chunk,
+            sequence_number,
+        )
 
     def _try_read(self, name: str, structure: type[_PresetStructure], capacity: int):
         if capacity <= 0:

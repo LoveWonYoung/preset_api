@@ -87,6 +87,88 @@ func VectorCanInit(device PresetDevice, config *PresetVectorConfig) int32 {
 	})
 }
 
+// DeviceCanWrite sends a raw CAN/CAN-FD frame directly on an initialized
+// channel without creating a UDS client.
+func DeviceCanWrite(device PresetDevice, channel uint8, id uint32, isFD bool, data []byte) int32 {
+	var fd uintptr
+	if isFD {
+		fd = 1
+	}
+	return withHandle(device.state, func(handle uintptr) int32 {
+		return invokeStatus(
+			"preset_can_write",
+			word(handle), word(uintptr(channel)), word(uintptr(id)), word(fd),
+			slicePointer(data), word(uintptr(len(data))),
+		)
+	})
+}
+
+// DeviceCanTryRead reads raw received frames directly from an initialized
+// channel. It returns zero frames when the backend is not due for another poll.
+func DeviceCanTryRead(device PresetDevice, channel uint8, frames []PresetCanFrame) (count int, status int32) {
+	length := uintptr(len(frames))
+	status = withHandle(device.state, func(handle uintptr) int32 {
+		return invokeStatus(
+			"preset_can_try_read",
+			word(handle), word(uintptr(channel)), slicePointer(frames), pointer(&length),
+		)
+	})
+	return int(length), status
+}
+
+// DeviceCanTryReadEx is DeviceCanTryRead with DLC, BRS, direction, and
+// hardware timestamp metadata.
+func DeviceCanTryReadEx(device PresetDevice, channel uint8, frames []PresetCanFrameEx) (count int, status int32) {
+	length := uintptr(len(frames))
+	status = withHandle(device.state, func(handle uintptr) int32 {
+		return invokeStatus(
+			"preset_can_try_read_ex",
+			word(handle), word(uintptr(channel)), slicePointer(frames), pointer(&length),
+		)
+	})
+	return int(length), status
+}
+
+func CanTpWriteSingleFrame(device PresetDevice, channel uint8, id uint32, config *PresetTpFrameConfig, data []byte) int32 {
+	return withHandle(device.state, func(handle uintptr) int32 {
+		return invokeStatus(
+			"preset_can_tp_write_single_frame",
+			word(handle), word(uintptr(channel)), word(uintptr(id)), pointer(config),
+			slicePointer(data), word(uintptr(len(data))),
+		)
+	})
+}
+
+func CanTpWriteFirstFrame(device PresetDevice, channel uint8, id uint32, config *PresetTpFrameConfig, firstChunk []byte, totalMessageSize uint32) int32 {
+	return withHandle(device.state, func(handle uintptr) int32 {
+		return invokeStatus(
+			"preset_can_tp_write_first_frame",
+			word(handle), word(uintptr(channel)), word(uintptr(id)), pointer(config),
+			slicePointer(firstChunk), word(uintptr(len(firstChunk))), word(uintptr(totalMessageSize)),
+		)
+	})
+}
+
+func CanTpWriteFlowControlFrame(device PresetDevice, channel uint8, id uint32, config *PresetTpFrameConfig, flowStatus, blockSize, stMin uint8) int32 {
+	return withHandle(device.state, func(handle uintptr) int32 {
+		return invokeStatus(
+			"preset_can_tp_write_flow_control_frame",
+			word(handle), word(uintptr(channel)), word(uintptr(id)), pointer(config),
+			word(uintptr(flowStatus)), word(uintptr(blockSize)), word(uintptr(stMin)),
+		)
+	})
+}
+
+func CanTpWriteConsecutiveFrame(device PresetDevice, channel uint8, id uint32, config *PresetTpFrameConfig, dataChunk []byte, sequenceNumber uint8) int32 {
+	return withHandle(device.state, func(handle uintptr) int32 {
+		return invokeStatus(
+			"preset_can_tp_write_consecutive_frame",
+			word(handle), word(uintptr(channel)), word(uintptr(id)), pointer(config),
+			slicePointer(dataChunk), word(uintptr(len(dataChunk))), word(uintptr(sequenceNumber)),
+		)
+	})
+}
+
 // DeviceClose closes any backend and clears device on success. It returns
 // PRESET_ERR_BUSY without changing the handle while a UDS client is active.
 func DeviceClose(device *PresetDevice) int32 {

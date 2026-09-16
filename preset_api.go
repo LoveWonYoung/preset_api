@@ -282,6 +282,11 @@ func DefaultConfig() (config PresetConfig, err error) {
 	return config, err
 }
 
+func TpFrameDefaultConfig() (config PresetTpFrameConfig, err error) {
+	err = callStruct("preset_tp_frame_default_config", unsafe.Pointer(&config), unsafe.Sizeof(config))
+	return config, err
+}
+
 func AutoDefaultConfig() (config PresetAutoConfig, err error) {
 	err = callStruct("preset_auto_default_config", unsafe.Pointer(&config), unsafe.Sizeof(config))
 	return config, err

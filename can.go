@@ -4,6 +4,60 @@ package preset_api
 
 import "runtime"
 
+func canTpEncode(symbol string, config *PresetTpFrameConfig, data []byte, extra []callArgument, out []byte) (count int, status int32) {
+	length := uintptr(0)
+	args := []callArgument{pointer(config), slicePointer(data), word(uintptr(len(data)))}
+	args = append(args, extra...)
+	args = append(args, slicePointer(out), word(uintptr(len(out))), pointer(&length))
+	status = invokeStatus(symbol, args...)
+	return int(length), status
+}
+
+func CanTpEncodeSingleFrame(config *PresetTpFrameConfig, data, out []byte) (count int, status int32) {
+	return canTpEncode("preset_can_tp_encode_single_frame", config, data, nil, out)
+}
+
+func CanTpEncodeFirstFrame(config *PresetTpFrameConfig, firstChunk []byte, totalMessageSize uint32, out []byte) (count int, status int32) {
+	return canTpEncode(
+		"preset_can_tp_encode_first_frame", config, firstChunk,
+		[]callArgument{word(uintptr(totalMessageSize))}, out,
+	)
+}
+
+func CanTpEncodeFlowControlFrame(config *PresetTpFrameConfig, flowStatus, blockSize, stMin uint8, out []byte) (count int, status int32) {
+	length := uintptr(0)
+	status = invokeStatus(
+		"preset_can_tp_encode_flow_control_frame",
+		pointer(config), word(uintptr(flowStatus)), word(uintptr(blockSize)), word(uintptr(stMin)),
+		slicePointer(out), word(uintptr(len(out))), pointer(&length),
+	)
+	return int(length), status
+}
+
+func CanTpEncodeConsecutiveFrame(config *PresetTpFrameConfig, dataChunk []byte, sequenceNumber uint8, out []byte) (count int, status int32) {
+	return canTpEncode(
+		"preset_can_tp_encode_consecutive_frame", config, dataChunk,
+		[]callArgument{word(uintptr(sequenceNumber))}, out,
+	)
+}
+
+// CanTpBuildFrames splits a complete ISO-TP PDU into ordered CAN data fields.
+// Passing a nil/empty frames slice queries the required frame count and returns
+// PRESET_ERR_BUFFER_TOO_SMALL.
+func CanTpBuildFrames(payload []byte, isFD bool, paddingByte uint8, frames []PresetTpEncodedFrame) (count int, status int32) {
+	var fd uintptr
+	if isFD {
+		fd = 1
+	}
+	length := uintptr(len(frames))
+	status = invokeStatus(
+		"preset_can_tp_build_frames",
+		slicePointer(payload), word(uintptr(len(payload))), word(fd), word(uintptr(paddingByte)),
+		slicePointer(frames), pointer(&length),
+	)
+	return int(length), status
+}
+
 func CanClientNew(device PresetDevice, channel uint8, config *PresetConfig) (client PresetCanUdsClient, status int32) {
 	var handle uintptr
 	status = withHandle(device.state, func(deviceHandle uintptr) int32 {
@@ -58,6 +112,16 @@ func CanUdsSetManualFlowControl(client PresetCanUdsClient, enabled bool) int32 {
 	})
 }
 
+func CanUdsSetManualTPMode(client PresetCanUdsClient, enabled bool) int32 {
+	var value uintptr
+	if enabled {
+		value = 1
+	}
+	return withHandle(client.state, func(handle uintptr) int32 {
+		return invokeStatus("preset_can_uds_set_manual_tp_mode", word(handle), word(value))
+	})
+}
+
 func CanSetBRS(client PresetCanUdsClient, enabled bool) int32 {
 	var value uintptr
 	if enabled {
@@ -95,6 +159,45 @@ func CanWrite(client PresetCanUdsClient, id uint32, isFD bool, data []byte) int3
 		return invokeStatus(
 			"preset_can_uds_write",
 			word(handle), word(uintptr(id)), word(fd), slicePointer(data), word(uintptr(len(data))),
+		)
+	})
+}
+
+func CanUdsTpWriteSingleFrame(client PresetCanUdsClient, id uint32, config *PresetTpFrameConfig, data []byte) int32 {
+	return withHandle(client.state, func(handle uintptr) int32 {
+		return invokeStatus(
+			"preset_can_uds_tp_write_single_frame",
+			word(handle), word(uintptr(id)), pointer(config), slicePointer(data), word(uintptr(len(data))),
+		)
+	})
+}
+
+func CanUdsTpWriteFirstFrame(client PresetCanUdsClient, id uint32, config *PresetTpFrameConfig, firstChunk []byte, totalMessageSize uint32) int32 {
+	return withHandle(client.state, func(handle uintptr) int32 {
+		return invokeStatus(
+			"preset_can_uds_tp_write_first_frame",
+			word(handle), word(uintptr(id)), pointer(config), slicePointer(firstChunk),
+			word(uintptr(len(firstChunk))), word(uintptr(totalMessageSize)),
+		)
+	})
+}
+
+func CanUdsTpWriteFlowControlFrame(client PresetCanUdsClient, id uint32, config *PresetTpFrameConfig, flowStatus, blockSize, stMin uint8) int32 {
+	return withHandle(client.state, func(handle uintptr) int32 {
+		return invokeStatus(
+			"preset_can_uds_tp_write_flow_control_frame",
+			word(handle), word(uintptr(id)), pointer(config), word(uintptr(flowStatus)),
+			word(uintptr(blockSize)), word(uintptr(stMin)),
+		)
+	})
+}
+
+func CanUdsTpWriteConsecutiveFrame(client PresetCanUdsClient, id uint32, config *PresetTpFrameConfig, dataChunk []byte, sequenceNumber uint8) int32 {
+	return withHandle(client.state, func(handle uintptr) int32 {
+		return invokeStatus(
+			"preset_can_uds_tp_write_consecutive_frame",
+			word(handle), word(uintptr(id)), pointer(config), slicePointer(dataChunk),
+			word(uintptr(len(dataChunk))), word(uintptr(sequenceNumber)),
 		)
 	})
 }

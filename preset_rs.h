@@ -59,11 +59,21 @@ enum {
     PRESET_CAP_TSMASTER_LIN = UINT64_C(1) << 22,
     PRESET_CAP_VECTOR_LIN = UINT64_C(1) << 23,
     PRESET_CAP_RAW_CAN_TIMESTAMP = UINT64_C(1) << 24,
+    PRESET_CAP_MANUAL_ISOTP_FRAMING = UINT64_C(1) << 25,
+    PRESET_CAP_DEVICE_RAW_CAN = UINT64_C(1) << 26,
+    PRESET_CAP_MANUAL_TP_MODE = UINT64_C(1) << 27,
+    PRESET_CAP_TP_FRAME_BUILDER = UINT64_C(1) << 28,
 };
 
 enum {
     PRESET_CAN_DIRECTION_TX = 0,
     PRESET_CAN_DIRECTION_RX = 1,
+};
+
+enum {
+    PRESET_TP_FLOW_CONTINUE_TO_SEND = 0,
+    PRESET_TP_FLOW_WAIT = 1,
+    PRESET_TP_FLOW_OVERFLOW = 2,
 };
 
 enum {
@@ -264,6 +274,23 @@ typedef struct PresetConfig {
     uint8_t raw_rx_enabled; /* 1 enables the raw capture ring */
     uint8_t reserved[2];
 } PresetConfig;
+
+/* Stateless manual ISO-TP frame options. Automatic padding is disabled by
+ * default. When enabled, frames are extended to at least 8 bytes and CAN-FD
+ * frames are rounded up to a legal DLC using padding_byte. */
+typedef struct PresetTpFrameConfig {
+    uint8_t is_fd;
+    uint8_t padding_enabled;
+    uint8_t padding_byte;
+    uint8_t reserved;
+} PresetTpFrameConfig;
+
+/* One complete CAN data field produced by preset_can_tp_build_frames. */
+typedef struct PresetTpEncodedFrame {
+    uint8_t data_len;
+    uint8_t reserved[7];
+    uint8_t data[64];
+} PresetTpEncodedFrame;
 
 typedef struct PresetCanFdTiming {
     uint32_t nominal_brp;
@@ -476,6 +503,7 @@ PRESET_RS_API const char *preset_version(void);
 PRESET_RS_API uint32_t preset_abi_version(void);
 PRESET_RS_API uint64_t preset_get_capabilities(void);
 PRESET_RS_API PresetConfig preset_default_config(void);
+PRESET_RS_API PresetTpFrameConfig preset_tp_frame_default_config(void);
 PRESET_RS_API PresetAutoConfig preset_auto_default_config(void);
 /* Explicit 500 kbit/s / 2 Mbit/s examples for each vendor clock/layout.
  * Keep the device config bitrates consistent for bus-load reporting. */
@@ -692,9 +720,132 @@ PRESET_RS_API int32_t preset_vector_can_init(
     PresetDevice *device,
     const PresetVectorConfig *device_config);
 
+/* Raw CAN I/O directly on an initialized channel. These functions do not
+ * create/register an ISO-TP or UDS client. They return PRESET_ERR_BUSY while a
+ * UDS client owns the same channel. Direct reads report received frames only
+ * and return zero frames when called before the backend's next RX poll time. */
+PRESET_RS_API int32_t preset_can_write(
+    PresetDevice *device,
+    uint8_t channel,
+    uint32_t id,
+    uint8_t is_fd,
+    const uint8_t *data,
+    size_t data_len);
+
+PRESET_RS_API int32_t preset_can_try_read(
+    PresetDevice *device,
+    uint8_t channel,
+    PresetCanFrame *frames,
+    size_t *inout_len);
+
+PRESET_RS_API int32_t preset_can_try_read_ex(
+    PresetDevice *device,
+    uint8_t channel,
+    PresetCanFrameEx *frames,
+    size_t *inout_len);
+
+/* Pure, stateless ISO-TP frame encoders. These functions do not access a CAN
+ * device or start a worker. out_data receives the complete CAN data field. On
+ * input, out_capacity is its size; out_len always receives the required or
+ * written byte count. Passing NULL/0 for out_data/out_capacity can be used to
+ * query the required size and returns PRESET_ERR_BUFFER_TOO_SMALL. A NULL
+ * config selects classic CAN with automatic padding disabled. */
+PRESET_RS_API int32_t preset_can_tp_encode_single_frame(
+    const PresetTpFrameConfig *config,
+    const uint8_t *data,
+    size_t data_len,
+    uint8_t *out_data,
+    size_t out_capacity,
+    size_t *out_len);
+
+PRESET_RS_API int32_t preset_can_tp_encode_first_frame(
+    const PresetTpFrameConfig *config,
+    const uint8_t *first_chunk,
+    size_t first_chunk_len,
+    uint32_t total_message_size,
+    uint8_t *out_data,
+    size_t out_capacity,
+    size_t *out_len);
+
+PRESET_RS_API int32_t preset_can_tp_encode_flow_control_frame(
+    const PresetTpFrameConfig *config,
+    uint8_t flow_status,
+    uint8_t block_size,
+    uint8_t st_min,
+    uint8_t *out_data,
+    size_t out_capacity,
+    size_t *out_len);
+
+PRESET_RS_API int32_t preset_can_tp_encode_consecutive_frame(
+    const PresetTpFrameConfig *config,
+    const uint8_t *data_chunk,
+    size_t data_chunk_len,
+    uint8_t sequence_number,
+    uint8_t *out_data,
+    size_t out_capacity,
+    size_t *out_len);
+
+/* Split a complete ISO-TP PDU into ordered CAN data fields. CAN-FD output is
+ * padded only to the next legal DLC using padding_byte; Classic CAN output is
+ * not padded. Pass frames = NULL to query the required frame count. When the
+ * array is absent or too small, *inout_frame_count receives the required count,
+ * PRESET_ERR_BUFFER_TOO_SMALL is returned, and no frames are written. */
+PRESET_RS_API int32_t preset_can_tp_build_frames(
+    const uint8_t *payload,
+    size_t payload_len,
+    uint8_t is_fd,
+    uint8_t padding_byte,
+    PresetTpEncodedFrame *frames,
+    size_t *inout_frame_count);
+
+/* Stateless manual ISO-TP writers. They only encode and send the requested
+ * frame; the caller owns sequence numbering, BlockSize, STmin, and timing.
+ * A NULL config selects classic CAN with padding disabled. With padding
+ * disabled, the encoded length must already be legal for the selected CAN
+ * format. With padding enabled, the frame is extended to at least 8 bytes and
+ * CAN-FD lengths are rounded up to a legal DLC using padding_byte. Padding in
+ * First Frames and non-final Consecutive Frames is transmitted as TP data, so
+ * callers must include those bytes when advancing their message offset. */
+PRESET_RS_API int32_t preset_can_tp_write_single_frame(
+    PresetDevice *device,
+    uint8_t channel,
+    uint32_t id,
+    const PresetTpFrameConfig *config,
+    const uint8_t *data,
+    size_t data_len);
+
+PRESET_RS_API int32_t preset_can_tp_write_first_frame(
+    PresetDevice *device,
+    uint8_t channel,
+    uint32_t id,
+    const PresetTpFrameConfig *config,
+    const uint8_t *first_chunk,
+    size_t first_chunk_len,
+    uint32_t total_message_size);
+
+PRESET_RS_API int32_t preset_can_tp_write_flow_control_frame(
+    PresetDevice *device,
+    uint8_t channel,
+    uint32_t id,
+    const PresetTpFrameConfig *config,
+    uint8_t flow_status,
+    uint8_t block_size,
+    uint8_t st_min);
+
+PRESET_RS_API int32_t preset_can_tp_write_consecutive_frame(
+    PresetDevice *device,
+    uint8_t channel,
+    uint32_t id,
+    const PresetTpFrameConfig *config,
+    const uint8_t *data_chunk,
+    size_t data_chunk_len,
+    uint8_t sequence_number);
+
 /* The CAN UDS client borrows RX/TX from one initialized channel. Different
  * channels may have active clients concurrently; each individual channel may
- * have at most one active client. For Toomoss and PCAN, channel is the
+ * have at most one active client. Creating this handle is optional; use the
+ * device-level raw/manual APIs above when UDS is not needed. For Toomoss and
+ * PCAN, channel is the
  * config channel (Toomoss: panel CAN1 = 0). TSMaster uses the corresponding
  * config channel; Vector uses application_channel. */
 PRESET_RS_API int32_t preset_can_uds_client_new(
@@ -741,9 +892,18 @@ PRESET_RS_API int32_t preset_can_uds_set_default_block_size(
 
 /* When enabled is 1, automatic flow-control transmission is disabled while
  * ISO-TP receive state and timers remain active. The caller must send flow-
- * control frames through preset_can_uds_write. Pass 0 to restore automatic
- * mode. */
+ * control frames through preset_can_uds_tp_write_flow_control_frame or
+ * preset_can_uds_write. Pass 0 to restore automatic mode. */
 PRESET_RS_API int32_t preset_can_uds_set_manual_flow_control(
+    PresetCanUdsClient *client,
+    uint8_t enabled);
+
+/* Manual TP mode keeps the CAN worker and raw capture active but suspends all
+ * automatic ISO-TP parsing/transmission. Entering or leaving the mode returns
+ * PRESET_ERR_BUSY while an automatic UDS request is pending. Automatic request
+ * calls also return PRESET_ERR_BUSY while the mode is enabled. Use this mode
+ * for malformed/incomplete TP sequences or tests that intentionally omit FC. */
+PRESET_RS_API int32_t preset_can_uds_set_manual_tp_mode(
     PresetCanUdsClient *client,
     uint8_t enabled);
 
@@ -769,6 +929,41 @@ PRESET_RS_API int32_t preset_can_uds_write(
     uint8_t is_fd,
     const uint8_t *data,
     size_t data_len);
+
+/* Manual TP writers routed through an existing client's CAN worker. They are
+ * serialized with other worker writes and do not advance automatic ISO-TP TX
+ * state. Enable manual TP mode above to isolate protocol-conformance tests;
+ * do not interleave these calls with an automatic UDS request. */
+PRESET_RS_API int32_t preset_can_uds_tp_write_single_frame(
+    PresetCanUdsClient *client,
+    uint32_t id,
+    const PresetTpFrameConfig *config,
+    const uint8_t *data,
+    size_t data_len);
+
+PRESET_RS_API int32_t preset_can_uds_tp_write_first_frame(
+    PresetCanUdsClient *client,
+    uint32_t id,
+    const PresetTpFrameConfig *config,
+    const uint8_t *first_chunk,
+    size_t first_chunk_len,
+    uint32_t total_message_size);
+
+PRESET_RS_API int32_t preset_can_uds_tp_write_flow_control_frame(
+    PresetCanUdsClient *client,
+    uint32_t id,
+    const PresetTpFrameConfig *config,
+    uint8_t flow_status,
+    uint8_t block_size,
+    uint8_t st_min);
+
+PRESET_RS_API int32_t preset_can_uds_tp_write_consecutive_frame(
+    PresetCanUdsClient *client,
+    uint32_t id,
+    const PresetTpFrameConfig *config,
+    const uint8_t *data_chunk,
+    size_t data_chunk_len,
+    uint8_t sequence_number);
 
 /* Raw capture must be enabled with PresetConfig.raw_rx_enabled before the
  * client is created. ISO-TP response processing is independent of this ring. */
