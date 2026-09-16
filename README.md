@@ -16,7 +16,7 @@ python examples/python/tsmaster_rx.py
 
 程序必须先用明确路径加载 DLL。相对路径会在调用 Windows `LoadLibrary` 之前转换为
 绝对路径，并用安全搜索标志加载依赖 DLL（目标 DLL 目录及 Windows 默认安全目录），
-不依赖当前目录或 `PATH`。加载时会校验 ABI 版本，当前仅接受 ABI v5。
+不依赖当前目录或 `PATH`。加载时会校验 ABI 版本，当前仅接受 ABI v6。
 
 ```go
 package main
@@ -51,7 +51,7 @@ func main() {
 }
 ```
 
-ABI v5 新增了自动 CAN 后端选择、显式 CAN-FD 时序、运行时 BRS/发送回显、带方向和
+ABI v6 提供自动 CAN 后端选择、显式 CAN-FD 时序、运行时 BRS/发送回显、带方向和
 DLC 元数据的原始帧读取，以及 PCAN、TSMaster、Vector 的 LIN 主站接口。例如：
 
 ```go
@@ -74,8 +74,10 @@ if status == preset.PRESET_OK {
 ```
 
 `LinUdsClientNew` 可用于所有支持的 LIN 后端。旧的 `ToomossLinUdsClientNew` Go 名称
-仍保留为兼容别名，但内部调用 ABI v5 的通用构造函数。`CanUdsTryReadEx` 与
-`CanUdsTryRead` 会消费同一个原始帧队列，不要在同一个 client 上混用。
+仍保留为兼容别名，但内部调用 ABI v6 的通用构造函数。`CanUdsTryReadEx`
+返回统一为微秒的厂商硬件/驱动单调时间 `TimestampUS`；不同后端的时间原点可能不同，
+该值适合排序和计算间隔，不是系统时间。值为 0 表示硬件时间不可用，例如软件生成的
+TX echo。所有原始帧读取函数会消费同一个队列，不要在同一个 client 上混用。
 
 所有返回 `status` 的函数沿用 `preset_rs.h` 中的 `PRESET_OK` 和
 `PRESET_ERR_*`。请求与批量读取函数返回实际写入数量；若输出切片太小，会返回
@@ -115,7 +117,7 @@ go test ./...
 $env:PRESET_RS_DLL = 'C:\path\to\preset_rs.dll'
 go test -v ./...
 
-# 使用 Python ctypes 检查 ABI v5 结构体、默认值及新增 CAN/LIN 调用签名
+# 使用 Python ctypes 检查 ABI v6 结构体、默认值及 CAN/LIN 调用签名
 python python/ctypes_smoke_test.py $env:PRESET_RS_DLL
 ```
 

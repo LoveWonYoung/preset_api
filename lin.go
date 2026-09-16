@@ -143,7 +143,7 @@ func LinUdsClientNew(device PresetDevice, channel, nad uint8) (client PresetLinU
 	return
 }
 
-// ToomossLinUdsClientNew is kept for source compatibility. The ABI v5 LIN UDS
+// ToomossLinUdsClientNew is kept for source compatibility. The ABI v6 LIN UDS
 // constructor is backend-independent, so new code should use LinUdsClientNew.
 func ToomossLinUdsClientNew(device PresetDevice, channel, nad uint8) (client PresetLinUdsClient, status int32) {
 	return LinUdsClientNew(device, channel, nad)

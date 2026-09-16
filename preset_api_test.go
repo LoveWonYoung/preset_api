@@ -34,7 +34,7 @@ func TestABILayouts(t *testing.T) {
 		{"PresetTSMasterConfig", unsafe.Sizeof(PresetTSMasterConfig{}), 36},
 		{"PresetVectorConfig", unsafe.Sizeof(PresetVectorConfig{}), 68},
 		{"PresetCanFrame", unsafe.Sizeof(PresetCanFrame{}), 72},
-		{"PresetCanFrameEx", unsafe.Sizeof(PresetCanFrameEx{}), 76},
+		{"PresetCanFrameEx", unsafe.Sizeof(PresetCanFrameEx{}), 88},
 		{"PresetRxStats", unsafe.Sizeof(PresetRxStats{}), 24},
 		{"PresetBusLoad", unsafe.Sizeof(PresetBusLoad{}), 32},
 	}
@@ -73,7 +73,8 @@ func TestABILayouts(t *testing.T) {
 		{"PresetVectorConfig.DriverRxQueueSize", unsafe.Offsetof(PresetVectorConfig{}.DriverRxQueueSize), 48},
 		{"PresetVectorConfig.MinRxPollIntervalUS", unsafe.Offsetof(PresetVectorConfig{}.MinRxPollIntervalUS), 64},
 		{"PresetCanFrame.Data", unsafe.Offsetof(PresetCanFrame{}.Data), 8},
-		{"PresetCanFrameEx.Data", unsafe.Offsetof(PresetCanFrameEx{}.Data), 12},
+		{"PresetCanFrameEx.TimestampUS", unsafe.Offsetof(PresetCanFrameEx{}.TimestampUS), 16},
+		{"PresetCanFrameEx.Data", unsafe.Offsetof(PresetCanFrameEx{}.Data), 24},
 		{"PresetRxStats.Queued", unsafe.Offsetof(PresetRxStats{}.Queued), 16},
 		{"PresetBusLoad.FrameCount", unsafe.Offsetof(PresetBusLoad{}.FrameCount), 24},
 	}
@@ -92,8 +93,8 @@ func TestToomossChannelMasks(t *testing.T) {
 }
 
 func TestABIConstants(t *testing.T) {
-	if SupportedABIVersion != 5 {
-		t.Fatalf("supported ABI = %d, want 5", SupportedABIVersion)
+	if SupportedABIVersion != 6 {
+		t.Fatalf("supported ABI = %d, want 6", SupportedABIVersion)
 	}
 	statuses := [...]int32{
 		PRESET_OK,
@@ -114,14 +115,15 @@ func TestABIConstants(t *testing.T) {
 			t.Fatalf("status %d = %d, want %d", index, status, want)
 		}
 	}
-	if PRESET_CAP_CLASSIC_CAN != 1 || PRESET_CAP_BUS_LOAD != 1<<16 || PRESET_CAP_VECTOR_LIN != 1<<23 {
-		t.Fatal("capability bit values do not match ABI v5")
+	if PRESET_CAP_CLASSIC_CAN != 1 || PRESET_CAP_BUS_LOAD != 1<<16 ||
+		PRESET_CAP_VECTOR_LIN != 1<<23 || PRESET_CAP_RAW_CAN_TIMESTAMP != 1<<24 {
+		t.Fatal("capability bit values do not match ABI v6")
 	}
 	if PRESET_CAN_DIRECTION_TX != 0 || PRESET_CAN_DIRECTION_RX != 1 ||
 		PRESET_CAN_BACKEND_TOOMOSS != 1 || PRESET_CAN_BACKEND_VECTOR != 4 ||
 		PRESET_LIN_PROTOCOL_13 != 0 || PRESET_LIN_PROTOCOL_21 != 2 ||
 		PRESET_LIN_FUNCTIONAL_NAD != 0x7e || PRESET_LIN_BROADCAST_NAD != 0x7f {
-		t.Fatal("CAN/LIN enum values do not match ABI v5")
+		t.Fatal("CAN/LIN enum values do not match ABI v6")
 	}
 }
 
@@ -190,7 +192,7 @@ func TestDLLSmoke(t *testing.T) {
 	}
 	for _, symbol := range newSymbols {
 		if _, err := findProc(symbol); err != nil {
-			t.Errorf("new ABI v5 symbol %s is unavailable: %v", symbol, err)
+			t.Errorf("ABI v6 symbol %s is unavailable: %v", symbol, err)
 		}
 	}
 	version, err := Version()

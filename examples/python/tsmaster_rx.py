@@ -78,7 +78,8 @@ def main() -> None:
                 for frame in client.try_read_ex():
                     direction = "TX" if frame.direction == 0 else "RX"
                     print(
-                        f"{direction} id=0x{frame.id:X} dlc={frame.dlc} "
+                        f"{direction} time_us={frame.timestamp_us} "
+                        f"id=0x{frame.id:X} dlc={frame.dlc} "
                         f"fd={frame.is_fd} brs={frame.brs} data={frame.payload.hex(' ')}"
                     )
                 time.sleep(0.02)

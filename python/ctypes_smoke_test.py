@@ -1,10 +1,10 @@
-"""ABI v5 ctypes smoke test for preset_rs.dll.
+"""ABI v6 ctypes smoke test for preset_rs.dll.
 
 Usage:
     python python/ctypes_smoke_test.py C:\\path\\to\\preset_rs.dll
 
 The test only calls metadata/default-value functions, so no CAN/LIN hardware is
-required. It also binds every CAN/LIN symbol added in ABI v5.
+required. It also binds the CAN/LIN symbols used by ABI v6.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from pathlib import Path
 
 PRESET_OK = 0
 PRESET_ERR_NOT_INIT = -3
-PRESET_ABI_VERSION = 5
+PRESET_ABI_VERSION = 6
 
 PRESET_CAN_BACKEND_NONE = 0
 PRESET_CAN_BACKEND_TOOMOSS = 1
@@ -140,7 +140,8 @@ class PresetCanFrameEx(ctypes.Structure):
         ("direction", ctypes.c_uint8),
         ("is_fd", ctypes.c_uint8),
         ("brs", ctypes.c_uint8),
-        ("reserved", ctypes.c_uint8 * 3),
+        ("reserved", ctypes.c_uint8 * 7),
+        ("timestamp_us", ctypes.c_uint64),
         ("data", ctypes.c_uint8 * 64),
     ]
 
@@ -241,14 +242,14 @@ def smoke_test(api: ctypes.CDLL) -> None:
     assert ctypes.sizeof(PresetTSMasterLinConfig) == 16
     assert ctypes.sizeof(PresetVectorLinConfig) == 24
     assert ctypes.sizeof(PresetLinFrame) == 12
-    assert ctypes.sizeof(PresetCanFrameEx) == 76
+    assert ctypes.sizeof(PresetCanFrameEx) == 88
 
     version = api.preset_version().decode("utf-8")
     abi_version = api.preset_abi_version()
     capabilities = api.preset_get_capabilities()
     assert abi_version == PRESET_ABI_VERSION, abi_version
-    required_v5_capabilities = sum(1 << bit for bit in range(17, 24))
-    assert capabilities & required_v5_capabilities == required_v5_capabilities
+    required_v6_capabilities = sum(1 << bit for bit in range(17, 25))
+    assert capabilities & required_v6_capabilities == required_v6_capabilities
 
     auto = api.preset_auto_default_config()
     assert auto.nominal_bitrate == 500_000
@@ -271,7 +272,7 @@ def smoke_test(api: ctypes.CDLL) -> None:
     assert tsmaster_lin.protocol == PRESET_LIN_PROTOCOL_21
     assert vector_lin.version == 3 and vector_lin.rx_queue_size == 16_384
 
-    # Exercise pointer arguments and the ABI v5 call signatures without
+    # Exercise pointer arguments and the ABI v6 call signatures without
     # opening hardware. A null opaque handle must be rejected deterministically.
     backend = ctypes.c_uint8(PRESET_CAN_BACKEND_NONE)
     assert api.preset_device_get_backend(None, ctypes.byref(backend)) == PRESET_ERR_NOT_INIT
@@ -304,7 +305,7 @@ def smoke_test(api: ctypes.CDLL) -> None:
     print(f"ABI version: {abi_version}")
     print(f"capabilities: 0x{capabilities:016x}")
     print(f"AutoDriver order: {list(auto.candidate_order)}")
-    print("ctypes ABI v5 smoke test passed")
+    print("ctypes ABI v6 smoke test passed")
 
 
 def default_dll_path() -> Path:

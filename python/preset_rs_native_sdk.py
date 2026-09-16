@@ -1,4 +1,4 @@
-"""Python ctypes binding for the ``preset_rs`` ABI v5 Windows DLL.
+"""Python ctypes binding for the ``preset_rs`` ABI v6 Windows DLL.
 
 The public classes in this module own their native handles and can be used as
 context managers.  The DLL itself remains available as ``sdk.dll`` for callers
@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Iterable, Sequence
 
 
-SUPPORTED_ABI_VERSION = 5
+SUPPORTED_ABI_VERSION = 6
 
 PRESET_OK = 0
 PRESET_ERR_NULL_PTR = -1
@@ -69,6 +69,7 @@ PRESET_CAP_AUTO_DRIVER = 1 << 20
 PRESET_CAP_PCAN_LIN = 1 << 21
 PRESET_CAP_TSMASTER_LIN = 1 << 22
 PRESET_CAP_VECTOR_LIN = 1 << 23
+PRESET_CAP_RAW_CAN_TIMESTAMP = 1 << 24
 
 PRESET_CAN_DIRECTION_TX = 0
 PRESET_CAN_DIRECTION_RX = 1
@@ -441,7 +442,8 @@ class PresetCanFrameEx(_PresetStructure):
         ("direction", ctypes.c_uint8),
         ("is_fd", ctypes.c_uint8),
         ("brs", ctypes.c_uint8),
-        ("reserved", ctypes.c_uint8 * 3),
+        ("reserved", ctypes.c_uint8 * 7),
+        ("timestamp_us", ctypes.c_uint64),
         ("data", ctypes.c_uint8 * 64),
     ]
 
@@ -530,7 +532,7 @@ class PresetRSNativeSDK:
         if not path.is_file():
             raise FileNotFoundError(path)
         if ctypes.sizeof(ctypes.c_void_p) != 8:
-            raise OSError("preset_rs ABI v5 requires 64-bit Python")
+            raise OSError("preset_rs ABI v6 requires 64-bit Python")
 
         # Search the target DLL directory for vendor dependencies while keeping
         # the normal Windows safe-search directories enabled.

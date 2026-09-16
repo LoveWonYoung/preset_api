@@ -5,7 +5,7 @@ package preset_api
 import "sync"
 
 // SupportedABIVersion is the only preset_rs C ABI accepted by this binding.
-const SupportedABIVersion uint32 = 5
+const SupportedABIVersion uint32 = 6
 
 // handleState serializes close against calls using the same native handle.
 // Wrappers are intentionally cheap to copy: every copy shares this state.
@@ -104,6 +104,7 @@ const (
 	PRESET_CAP_PCAN_LIN
 	PRESET_CAP_TSMASTER_LIN
 	PRESET_CAP_VECTOR_LIN
+	PRESET_CAP_RAW_CAN_TIMESTAMP
 )
 
 const (

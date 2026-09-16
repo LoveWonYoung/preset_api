@@ -195,17 +195,20 @@ type PresetCanFrame struct {
 	Data     [64]uint8
 }
 
-// PresetCanFrameEx includes DLC, direction, CAN-FD, and BRS metadata. Do not
-// mix CanTryRead and CanUdsTryReadEx on one client; both drain the same ring.
+// PresetCanFrameEx includes DLC, direction, CAN-FD, BRS, and a vendor
+// monotonic timestamp normalized to microseconds. TimestampUS is zero when
+// unavailable. Do not mix CanTryRead and CanUdsTryReadEx on one client; both
+// drain the same ring.
 type PresetCanFrameEx struct {
-	ID        uint32
-	DLC       uint8
-	DataLen   uint8
-	Direction uint8 // PRESET_CAN_DIRECTION_*
-	IsFD      uint8
-	BRS       uint8
-	Reserved  [3]uint8
-	Data      [64]uint8
+	ID          uint32
+	DLC         uint8
+	DataLen     uint8
+	Direction   uint8 // PRESET_CAN_DIRECTION_*
+	IsFD        uint8
+	BRS         uint8
+	Reserved    [7]uint8
+	TimestampUS uint64
+	Data        [64]uint8
 }
 
 type PresetRxStats struct {

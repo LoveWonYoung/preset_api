@@ -44,6 +44,7 @@ class CanFrame:
     direction: str
     is_fd: bool
     brs: bool
+    timestamp_us: int
 
     @classmethod
     def from_native(cls, frame: PresetCanFrameEx) -> "CanFrame":
@@ -54,6 +55,7 @@ class CanFrame:
             direction="TX" if frame.direction == 0 else "RX",
             is_fd=bool(frame.is_fd),
             brs=bool(frame.brs),
+            timestamp_us=int(frame.timestamp_us),
         )
 
 
@@ -135,7 +137,9 @@ class MyDevice:
         frames: list[CanFrame] = []
         deadline = time.monotonic() + timeout_ms / 1000.0
         while True:
-            frames.extend(CanFrame.from_native(frame) for frame in client.try_read_ex(capacity))
+            frames.extend(
+                CanFrame.from_native(frame) for frame in client.try_read_ex(capacity)
+            )
             if frames or time.monotonic() >= deadline:
                 return frames
             time.sleep(0.02)

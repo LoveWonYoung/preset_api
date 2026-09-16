@@ -37,12 +37,13 @@ func (backend Backend) String() string {
 
 // CanFrame is a raw CAN/CAN-FD frame returned by MyDevice.Rxfn.
 type CanFrame struct {
-	ID        uint32
-	DLC       uint8
-	Data      []byte
-	Direction string
-	IsFD      bool
-	BRS       bool
+	ID          uint32
+	DLC         uint8
+	Data        []byte
+	Direction   string
+	IsFD        bool
+	BRS         bool
+	TimestampUS uint64
 }
 
 func canFrameFromEx(frame PresetCanFrameEx) CanFrame {
@@ -53,12 +54,13 @@ func canFrameFromEx(frame PresetCanFrameEx) CanFrame {
 	data := make([]byte, frame.DataLen)
 	copy(data, frame.Data[:frame.DataLen])
 	return CanFrame{
-		ID:        frame.ID,
-		DLC:       frame.DLC,
-		Data:      data,
-		Direction: direction,
-		IsFD:      frame.IsFD != 0,
-		BRS:       frame.BRS != 0,
+		ID:          frame.ID,
+		DLC:         frame.DLC,
+		Data:        data,
+		Direction:   direction,
+		IsFD:        frame.IsFD != 0,
+		BRS:         frame.BRS != 0,
+		TimestampUS: frame.TimestampUS,
 	}
 }
 

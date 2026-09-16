@@ -57,8 +57,9 @@ func run() error {
 	}
 	for _, frame := range frames {
 		fmt.Printf(
-			"%s id=0x%X dlc=%d fd=%d brs=%d data=%s\n",
+			"%s time_us=%d id=0x%X dlc=%d fd=%d brs=%d data=%s\n",
 			frame.Direction,
+			frame.TimestampUS,
 			frame.ID,
 			frame.DLC,
 			boolBit(frame.IsFD),

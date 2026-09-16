@@ -58,6 +58,7 @@ enum {
     PRESET_CAP_PCAN_LIN = UINT64_C(1) << 21,
     PRESET_CAP_TSMASTER_LIN = UINT64_C(1) << 22,
     PRESET_CAP_VECTOR_LIN = UINT64_C(1) << 23,
+    PRESET_CAP_RAW_CAN_TIMESTAMP = UINT64_C(1) << 24,
 };
 
 enum {
@@ -79,6 +80,7 @@ enum {
 };
 
 enum {
+    /* Panel LIN1/2/3/4 = bits 0/1/2/3 (same zero-based index as CAN). */
     PRESET_TOOMOSS_CHANNEL_1 = UINT8_C(1) << 0,
     PRESET_TOOMOSS_CHANNEL_2 = UINT8_C(1) << 1,
     PRESET_TOOMOSS_CHANNEL_3 = UINT8_C(1) << 2,
@@ -291,7 +293,7 @@ typedef struct PresetAutoConfig {
 } PresetAutoConfig;
 
 typedef struct PresetToomossConfig {
-    uint8_t channel;
+    uint8_t channel; /* zero-based: panel CAN1/2/3/4 = 0/1/2/3 */
     uint8_t brs;
     uint8_t reserved[2];
     uint32_t nominal_bitrate;
@@ -439,9 +441,10 @@ typedef struct PresetCanFrame {
     uint8_t data[64];
 } PresetCanFrame;
 
-/* Extended raw-frame representation. Do not mix preset_can_uds_try_read and
- * preset_can_uds_try_read_ex on the same client because both drain the same
- * raw capture ring. */
+/* Extended raw-frame representation. timestamp_us is the vendor hardware or
+ * driver monotonic timestamp normalized to microseconds; zero means unavailable.
+ * Do not mix preset_can_uds_try_read and preset_can_uds_try_read_ex on the same
+ * client because both drain the same raw capture ring. */
 typedef struct PresetCanFrameEx {
     uint32_t id;
     uint8_t dlc;
@@ -449,7 +452,8 @@ typedef struct PresetCanFrameEx {
     uint8_t direction; /* PRESET_CAN_DIRECTION_* */
     uint8_t is_fd;
     uint8_t brs;
-    uint8_t reserved[3];
+    uint8_t reserved[7];
+    uint64_t timestamp_us;
     uint8_t data[64];
 } PresetCanFrameEx;
 
@@ -690,8 +694,9 @@ PRESET_RS_API int32_t preset_vector_can_init(
 
 /* The CAN UDS client borrows RX/TX from one initialized channel. Different
  * channels may have active clients concurrently; each individual channel may
- * have at most one active client. For PCAN and TSMaster, channel is the
- * corresponding config channel; Vector uses application_channel. */
+ * have at most one active client. For Toomoss and PCAN, channel is the
+ * config channel (Toomoss: panel CAN1 = 0). TSMaster uses the corresponding
+ * config channel; Vector uses application_channel. */
 PRESET_RS_API int32_t preset_can_uds_client_new(
     PresetDevice *device,
     uint8_t channel,

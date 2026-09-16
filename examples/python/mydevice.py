@@ -27,7 +27,8 @@ def main() -> None:
 
         for frame in device.rxfn(timeout_ms=2000):
             print(
-                f"{frame.direction} id=0x{frame.id:X} dlc={frame.dlc} "
+                f"{frame.direction} time_us={frame.timestamp_us} "
+                f"id=0x{frame.id:X} dlc={frame.dlc} "
                 f"fd={int(frame.is_fd)} brs={int(frame.brs)} data={frame.data.hex(' ')}"
             )
 
