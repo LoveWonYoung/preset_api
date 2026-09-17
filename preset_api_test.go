@@ -267,6 +267,12 @@ func TestDLLSmoke(t *testing.T) {
 	if _, status := CanUdsRequest(PresetCanUdsClient{}, []byte{0x10, 0x01}, 100, make([]byte, 8)); status != PRESET_ERR_NOT_INIT {
 		t.Fatalf("null CAN request status = %d, want %d", status, PRESET_ERR_NOT_INIT)
 	}
+	if _, status := CanUdsRequest(PresetCanUdsClient{}, "10 01", 100, make([]byte, 8)); status != PRESET_ERR_NOT_INIT {
+		t.Fatalf("null CAN hex request status = %d, want %d", status, PRESET_ERR_NOT_INIT)
+	}
+	if _, status := CanUdsRequest(PresetCanUdsClient{}, "zz", 100, make([]byte, 8)); status != PRESET_ERR_INVALID_ARG {
+		t.Fatalf("invalid CAN hex request status = %d, want %d", status, PRESET_ERR_INVALID_ARG)
+	}
 	if _, _, status := LinUdsRequest(PresetLinUdsClient{}, []byte{0x10, 0x01}, 100, make([]byte, 8)); status != PRESET_ERR_NOT_INIT {
 		t.Fatalf("null LIN request status = %d, want %d", status, PRESET_ERR_NOT_INIT)
 	}

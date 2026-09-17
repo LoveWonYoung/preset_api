@@ -82,8 +82,29 @@ func canUdsRequest(symbol string, client PresetCanUdsClient, payload []byte, tim
 	return int(length), status
 }
 
-func CanUdsRequest(client PresetCanUdsClient, payload []byte, timeoutMS uint32, out []byte) (count int, status int32) {
-	return canUdsRequest("preset_can_uds_request", client, payload, timeoutMS, out)
+// CanUdsRequest sends a physical UDS request. Payload may be raw bytes or a
+// hex string (spaces allowed); invalid hex returns PRESET_ERR_INVALID_ARG.
+func CanUdsRequest[T []byte | string](client PresetCanUdsClient, payload T, timeoutMS uint32, out []byte) (count int, status int32) {
+	data, status := bytesFromPayload(payload)
+	if status != PRESET_OK {
+		return 0, status
+	}
+	return canUdsRequest("preset_can_uds_request", client, data, timeoutMS, out)
+}
+
+func bytesFromPayload[T []byte | string](payload T) (data []byte, status int32) {
+	switch v := any(payload).(type) {
+	case []byte:
+		return v, PRESET_OK
+	case string:
+		decoded, err := BytesFromHex(v)
+		if err != nil {
+			return nil, PRESET_ERR_INVALID_ARG
+		}
+		return decoded, PRESET_OK
+	default:
+		return nil, PRESET_ERR_INVALID_ARG
+	}
 }
 
 func CanUdsFunctionalRequest(client PresetCanUdsClient, payload []byte, timeoutMS uint32, out []byte) (count int, status int32) {

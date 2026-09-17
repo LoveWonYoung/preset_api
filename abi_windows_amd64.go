@@ -2,7 +2,12 @@
 
 package preset_api
 
-import "unsafe"
+import (
+	"encoding/hex"
+	"strings"
+	"unicode"
+	"unsafe"
+)
 
 // Microsoft x64 returns plain C structs of 1, 2, 4, or 8 bytes in RAX. All
 // other struct sizes used by this API are returned through a hidden first
@@ -33,4 +38,14 @@ func copyRegisterResult(destination unsafe.Pointer, size, value uintptr) {
 	case 8:
 		*(*uint64)(destination) = uint64(value)
 	}
+}
+
+func BytesFromHex(s string) ([]byte, error) {
+	s = strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, s)
+	return hex.DecodeString(s)
 }
