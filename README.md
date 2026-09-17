@@ -84,6 +84,14 @@ TX echo。所有原始帧读取函数会消费同一个队列，不要在同一�
 `PRESET_ERR_BUFFER_TOO_SMALL`，同时数量为所需容量。DLL 加载或符号解析失败会返回
 `PRESET_ERR_TRANSPORT`，具体原因由 `DLLLoadError()` 提供。
 
+Go 绑定的 CAN/LIN 请求和发送函数都可直接接收 `[]byte` 或十六进制字符串；字符串中
+允许包含空白字符，格式错误时返回 `PRESET_ERR_INVALID_ARG`：
+
+```go
+status := preset.CanWrite(client, 0x7e0, false, "02 10 01")
+count, status := preset.CanUdsRequest(client, "22 F1 90", 1000, response)
+```
+
 ## 生命周期与并发
 
 - `PresetDevice`、`PresetCanUdsClient` 和 `PresetLinUdsClient` 是共享状态的句柄值；

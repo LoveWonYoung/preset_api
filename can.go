@@ -107,8 +107,12 @@ func bytesFromPayload[T []byte | string](payload T) (data []byte, status int32) 
 	}
 }
 
-func CanUdsFunctionalRequest(client PresetCanUdsClient, payload []byte, timeoutMS uint32, out []byte) (count int, status int32) {
-	return canUdsRequest("preset_can_uds_functional_request", client, payload, timeoutMS, out)
+func CanUdsFunctionalRequest[T []byte | string](client PresetCanUdsClient, payload T, timeoutMS uint32, out []byte) (count int, status int32) {
+	data, status := bytesFromPayload(payload)
+	if status != PRESET_OK {
+		return 0, status
+	}
+	return canUdsRequest("preset_can_uds_functional_request", client, data, timeoutMS, out)
 }
 
 func CanUdsSetDefaultSTMin(client PresetCanUdsClient, stMinMS uint32) int32 {
@@ -171,7 +175,11 @@ func CanUdsSetRawTxEcho(client PresetCanUdsClient, enabled bool) int32 {
 	})
 }
 
-func CanWrite(client PresetCanUdsClient, id uint32, isFD bool, data []byte) int32 {
+func CanWrite[T []byte | string](client PresetCanUdsClient, id uint32, isFD bool, payload T) int32 {
+	data, status := bytesFromPayload(payload)
+	if status != PRESET_OK {
+		return status
+	}
 	var fd uintptr
 	if isFD {
 		fd = 1
@@ -184,7 +192,11 @@ func CanWrite(client PresetCanUdsClient, id uint32, isFD bool, data []byte) int3
 	})
 }
 
-func CanUdsTpWriteSingleFrame(client PresetCanUdsClient, id uint32, config *PresetTpFrameConfig, data []byte) int32 {
+func CanUdsTpWriteSingleFrame[T []byte | string](client PresetCanUdsClient, id uint32, config *PresetTpFrameConfig, payload T) int32 {
+	data, status := bytesFromPayload(payload)
+	if status != PRESET_OK {
+		return status
+	}
 	return withHandle(client.state, func(handle uintptr) int32 {
 		return invokeStatus(
 			"preset_can_uds_tp_write_single_frame",
@@ -193,7 +205,11 @@ func CanUdsTpWriteSingleFrame(client PresetCanUdsClient, id uint32, config *Pres
 	})
 }
 
-func CanUdsTpWriteFirstFrame(client PresetCanUdsClient, id uint32, config *PresetTpFrameConfig, firstChunk []byte, totalMessageSize uint32) int32 {
+func CanUdsTpWriteFirstFrame[T []byte | string](client PresetCanUdsClient, id uint32, config *PresetTpFrameConfig, firstChunkPayload T, totalMessageSize uint32) int32 {
+	firstChunk, status := bytesFromPayload(firstChunkPayload)
+	if status != PRESET_OK {
+		return status
+	}
 	return withHandle(client.state, func(handle uintptr) int32 {
 		return invokeStatus(
 			"preset_can_uds_tp_write_first_frame",
@@ -213,7 +229,11 @@ func CanUdsTpWriteFlowControlFrame(client PresetCanUdsClient, id uint32, config 
 	})
 }
 
-func CanUdsTpWriteConsecutiveFrame(client PresetCanUdsClient, id uint32, config *PresetTpFrameConfig, dataChunk []byte, sequenceNumber uint8) int32 {
+func CanUdsTpWriteConsecutiveFrame[T []byte | string](client PresetCanUdsClient, id uint32, config *PresetTpFrameConfig, dataChunkPayload T, sequenceNumber uint8) int32 {
+	dataChunk, status := bytesFromPayload(dataChunkPayload)
+	if status != PRESET_OK {
+		return status
+	}
 	return withHandle(client.state, func(handle uintptr) int32 {
 		return invokeStatus(
 			"preset_can_uds_tp_write_consecutive_frame",

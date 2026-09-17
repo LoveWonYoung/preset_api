@@ -89,7 +89,11 @@ func VectorCanInit(device PresetDevice, config *PresetVectorConfig) int32 {
 
 // DeviceCanWrite sends a raw CAN/CAN-FD frame directly on an initialized
 // channel without creating a UDS client.
-func DeviceCanWrite(device PresetDevice, channel uint8, id uint32, isFD bool, data []byte) int32 {
+func DeviceCanWrite[T []byte | string](device PresetDevice, channel uint8, id uint32, isFD bool, payload T) int32 {
+	data, status := bytesFromPayload(payload)
+	if status != PRESET_OK {
+		return status
+	}
 	var fd uintptr
 	if isFD {
 		fd = 1
@@ -129,7 +133,11 @@ func DeviceCanTryReadEx(device PresetDevice, channel uint8, frames []PresetCanFr
 	return int(length), status
 }
 
-func CanTpWriteSingleFrame(device PresetDevice, channel uint8, id uint32, config *PresetTpFrameConfig, data []byte) int32 {
+func CanTpWriteSingleFrame[T []byte | string](device PresetDevice, channel uint8, id uint32, config *PresetTpFrameConfig, payload T) int32 {
+	data, status := bytesFromPayload(payload)
+	if status != PRESET_OK {
+		return status
+	}
 	return withHandle(device.state, func(handle uintptr) int32 {
 		return invokeStatus(
 			"preset_can_tp_write_single_frame",
@@ -139,7 +147,11 @@ func CanTpWriteSingleFrame(device PresetDevice, channel uint8, id uint32, config
 	})
 }
 
-func CanTpWriteFirstFrame(device PresetDevice, channel uint8, id uint32, config *PresetTpFrameConfig, firstChunk []byte, totalMessageSize uint32) int32 {
+func CanTpWriteFirstFrame[T []byte | string](device PresetDevice, channel uint8, id uint32, config *PresetTpFrameConfig, firstChunkPayload T, totalMessageSize uint32) int32 {
+	firstChunk, status := bytesFromPayload(firstChunkPayload)
+	if status != PRESET_OK {
+		return status
+	}
 	return withHandle(device.state, func(handle uintptr) int32 {
 		return invokeStatus(
 			"preset_can_tp_write_first_frame",
@@ -159,7 +171,11 @@ func CanTpWriteFlowControlFrame(device PresetDevice, channel uint8, id uint32, c
 	})
 }
 
-func CanTpWriteConsecutiveFrame(device PresetDevice, channel uint8, id uint32, config *PresetTpFrameConfig, dataChunk []byte, sequenceNumber uint8) int32 {
+func CanTpWriteConsecutiveFrame[T []byte | string](device PresetDevice, channel uint8, id uint32, config *PresetTpFrameConfig, dataChunkPayload T, sequenceNumber uint8) int32 {
+	dataChunk, status := bytesFromPayload(dataChunkPayload)
+	if status != PRESET_OK {
+		return status
+	}
 	return withHandle(device.state, func(handle uintptr) int32 {
 		return invokeStatus(
 			"preset_can_tp_write_consecutive_frame",

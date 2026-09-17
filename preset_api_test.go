@@ -154,6 +154,35 @@ func TestLocalValidationWithoutDLL(t *testing.T) {
 	if status := DeviceClose(&device); status != PRESET_OK {
 		t.Fatalf("closing a zero-value device = %d, want %d", status, PRESET_OK)
 	}
+
+	data, status := bytesFromPayload("10 01 ff")
+	if status != PRESET_OK || len(data) != 3 || data[0] != 0x10 || data[1] != 0x01 || data[2] != 0xff {
+		t.Fatalf("hex payload conversion = (% x, %d)", data, status)
+	}
+
+	invalidPayloadStatuses := map[string]int32{
+		"CanUdsRequest": func() int32 { _, status := CanUdsRequest(PresetCanUdsClient{}, "zz", 100, nil); return status }(),
+		"CanUdsFunctionalRequest": func() int32 {
+			_, status := CanUdsFunctionalRequest(PresetCanUdsClient{}, "zz", 100, nil)
+			return status
+		}(),
+		"CanWrite":                      CanWrite(PresetCanUdsClient{}, 0x7e0, false, "zz"),
+		"CanUdsTpWriteSingleFrame":      CanUdsTpWriteSingleFrame(PresetCanUdsClient{}, 0x7e0, nil, "zz"),
+		"CanUdsTpWriteFirstFrame":       CanUdsTpWriteFirstFrame(PresetCanUdsClient{}, 0x7e0, nil, "zz", 8),
+		"CanUdsTpWriteConsecutiveFrame": CanUdsTpWriteConsecutiveFrame(PresetCanUdsClient{}, 0x7e0, nil, "zz", 1),
+		"DeviceCanWrite":                DeviceCanWrite(PresetDevice{}, 0, 0x7e0, false, "zz"),
+		"CanTpWriteSingleFrame":         CanTpWriteSingleFrame(PresetDevice{}, 0, 0x7e0, nil, "zz"),
+		"CanTpWriteFirstFrame":          CanTpWriteFirstFrame(PresetDevice{}, 0, 0x7e0, nil, "zz", 8),
+		"CanTpWriteConsecutiveFrame":    CanTpWriteConsecutiveFrame(PresetDevice{}, 0, 0x7e0, nil, "zz", 1),
+		"ToomossLinWrite":               ToomossLinWrite(PresetDevice{}, 0, 0x3c, "zz"),
+		"LinMasterWrite":                LinMasterWrite(PresetDevice{}, 0, 0x3c, "zz"),
+		"LinUdsRequest":                 func() int32 { _, _, status := LinUdsRequest(PresetLinUdsClient{}, "zz", 100, nil); return status }(),
+	}
+	for name, status := range invalidPayloadStatuses {
+		if status != PRESET_ERR_INVALID_ARG {
+			t.Errorf("%s invalid hex status = %d, want %d", name, status, PRESET_ERR_INVALID_ARG)
+		}
+	}
 }
 
 func TestDLLSmoke(t *testing.T) {
