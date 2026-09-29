@@ -732,6 +732,17 @@ PRESET_RS_API int32_t preset_can_write(
     const uint8_t *data,
     size_t data_len);
 
+/* Set BRS for this frame only; brs must be 0 or 1. Classic CAN ignores BRS.
+ * The channel's configured BRS setting is unchanged. */
+PRESET_RS_API int32_t preset_can_write_with_brs(
+    PresetDevice *device,
+    uint8_t channel,
+    uint32_t id,
+    uint8_t is_fd,
+    uint8_t brs,
+    const uint8_t *data,
+    size_t data_len);
+
 PRESET_RS_API int32_t preset_can_try_read(
     PresetDevice *device,
     uint8_t channel,
@@ -930,6 +941,16 @@ PRESET_RS_API int32_t preset_can_uds_write(
     const uint8_t *data,
     size_t data_len);
 
+/* Set BRS for this frame only; brs must be 0 or 1. Classic CAN ignores BRS.
+ * The client's default BRS setting is unchanged. */
+PRESET_RS_API int32_t preset_can_uds_write_with_brs(
+    PresetCanUdsClient *client,
+    uint32_t id,
+    uint8_t is_fd,
+    uint8_t brs,
+    const uint8_t *data,
+    size_t data_len);
+
 /* Manual TP writers routed through an existing client's CAN worker. They are
  * serialized with other worker writes and do not advance automatic ISO-TP TX
  * state. Enable manual TP mode above to isolate protocol-conformance tests;
@@ -988,10 +1009,11 @@ PRESET_RS_API int32_t preset_can_uds_set_bus_load_enabled(
     PresetCanUdsClient *client,
     uint8_t enabled);
 
-/* Estimated total bus occupancy over a one-second sliding window. Both
- * received frames and successfully transmitted frames are included. TX echo
- * frames matching a recent transmission are counted only once. When
- * measurement is disabled, load and frame_count are zero. */
+/* Total bus occupancy as a 0.0-1.0 ratio. TSMaster uses its native bus-load
+ * statistic; other backends estimate occupancy over a one-second sliding
+ * window. frame_count always comes from the software window. TX echoes
+ * matching recent transmissions are counted once. When measurement is
+ * disabled, load and frame_count are zero. */
 PRESET_RS_API int32_t preset_can_uds_get_bus_load(
     PresetCanUdsClient *client,
     PresetBusLoad *out_load);
