@@ -3,9 +3,6 @@
 package preset_api
 
 import (
-	"encoding/hex"
-	"strings"
-	"unicode"
 	"unsafe"
 )
 
@@ -38,14 +35,4 @@ func copyRegisterResult(destination unsafe.Pointer, size, value uintptr) {
 	case 8:
 		*(*uint64)(destination) = uint64(value)
 	}
-}
-
-func BytesFromHex(s string) ([]byte, error) {
-	s = strings.Map(func(r rune) rune {
-		if unicode.IsSpace(r) {
-			return -1
-		}
-		return r
-	}, s)
-	return hex.DecodeString(s)
 }

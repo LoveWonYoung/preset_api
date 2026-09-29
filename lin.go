@@ -8,18 +8,17 @@ func ToomossLinInit(device PresetDevice, config *PresetToomossLinConfig) int32 {
 	})
 }
 
-func ToomossLinWrite[T []byte | string](device PresetDevice, channel, frameID uint8, payload T) int32 {
-	data, status := bytesFromPayload(payload)
-	if status != PRESET_OK {
-		return status
-	}
-	return withHandle(device.state, func(handle uintptr) int32 {
+func ToomossLinWrite(device PresetDevice, channel, frameID uint8, payload []byte) int32 {
+	if status := withHandle(device.state, func(handle uintptr) int32 {
 		return invokeStatus(
 			"preset_toomoss_lin_write",
 			word(handle), word(uintptr(channel)), word(uintptr(frameID)),
-			slicePointer(data), word(uintptr(len(data))),
+			slicePointer(payload), word(uintptr(len(payload))),
 		)
-	})
+	}); status != PRESET_OK {
+		return status
+	}
+	return PRESET_OK
 }
 
 func ToomossLinRead(device PresetDevice, channel, frameID uint8) (frame PresetToomossLinFrame, status int32) {
@@ -114,16 +113,12 @@ func VectorLinInit(device PresetDevice, config *PresetVectorLinConfig) int32 {
 	})
 }
 
-func LinMasterWrite[T []byte | string](device PresetDevice, channel, frameID uint8, payload T) int32 {
-	data, status := bytesFromPayload(payload)
-	if status != PRESET_OK {
-		return status
-	}
+func LinMasterWrite(device PresetDevice, channel, frameID uint8, payload []byte) int32 {
 	return withHandle(device.state, func(handle uintptr) int32 {
 		return invokeStatus(
 			"preset_lin_master_write",
 			word(handle), word(uintptr(channel)), word(uintptr(frameID)),
-			slicePointer(data), word(uintptr(len(data))),
+			slicePointer(payload), word(uintptr(len(payload))),
 		)
 	})
 }
@@ -157,16 +152,12 @@ func ToomossLinUdsClientNew(device PresetDevice, channel, nad uint8) (client Pre
 	return LinUdsClientNew(device, channel, nad)
 }
 
-func LinUdsRequest[T []byte | string](client PresetLinUdsClient, payload T, timeoutMS uint32, out []byte) (nad uint8, count int, status int32) {
-	data, status := bytesFromPayload(payload)
-	if status != PRESET_OK {
-		return 0, 0, status
-	}
+func LinUdsRequest(client PresetLinUdsClient, payload []byte, timeoutMS uint32, out []byte) (nad uint8, count int, status int32) {
 	length := uintptr(0)
 	status = withHandle(client.state, func(handle uintptr) int32 {
 		return invokeStatus(
 			"preset_lin_uds_request",
-			word(handle), slicePointer(data), word(uintptr(len(data))), word(uintptr(timeoutMS)),
+			word(handle), slicePointer(payload), word(uintptr(len(payload))), word(uintptr(timeoutMS)),
 			pointer(&nad), slicePointer(out), word(uintptr(len(out))), pointer(&length),
 		)
 	})

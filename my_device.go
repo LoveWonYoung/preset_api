@@ -246,10 +246,10 @@ func (d *MyDevice) request(functional bool, payload []byte, timeoutMS uint32, ch
 		return nil, err
 	}
 	op := "preset_can_uds_request"
-	call := CanUdsRequest[[]byte]
+	call := CanUdsRequest
 	if functional {
 		op = "preset_can_uds_functional_request"
-		call = CanUdsFunctionalRequest[[]byte]
+		call = CanUdsFunctionalRequest
 	}
 
 	out := make([]byte, d.responseCapacity)
