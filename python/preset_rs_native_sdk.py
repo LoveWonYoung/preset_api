@@ -661,6 +661,11 @@ class PresetRSNativeSDK:
         tp_config = ctypes.POINTER(PresetTpFrameConfig)
         _bind(d.preset_can_write, [DeviceHandle, u8, u32, u8, _U8P, size], status)
         _bind(
+            d.preset_can_write_with_brs,
+            [DeviceHandle, u8, u32, u8, u8, _U8P, size],
+            status,
+        )
+        _bind(
             d.preset_can_try_read,
             [DeviceHandle, u8, ctypes.POINTER(PresetCanFrame), _SIZEP],
             status,
@@ -753,6 +758,11 @@ class PresetRSNativeSDK:
         _bind(d.preset_can_uds_get_brs, [CanClientHandle, _U8P], status)
         _bind(d.preset_can_uds_set_raw_tx_echo, [CanClientHandle, u8], status)
         _bind(d.preset_can_uds_write, [CanClientHandle, u32, u8, _U8P, size], status)
+        _bind(
+            d.preset_can_uds_write_with_brs,
+            [CanClientHandle, u32, u8, u8, _U8P, size],
+            status,
+        )
         _bind(
             d.preset_can_uds_tp_write_single_frame,
             [CanClientHandle, u32, tp_config, _U8P, size],
@@ -1204,6 +1214,19 @@ class PresetDevice(_NativeHandle):
                 name,
             )
 
+    def can_write_with_brs(
+        self, channel: int, can_id: int, data, *, is_fd: bool = False, brs: bool = True
+    ) -> None:
+        raw, array = _byte_input(data)
+        name = "preset_can_write_with_brs"
+        with self._lock:
+            self._sdk._check(
+                getattr(self._sdk.dll, name)(
+                    self._require_handle(), channel, can_id, bool(is_fd), bool(brs), array, len(raw)
+                ),
+                name,
+            )
+
     def can_try_read(self, channel: int, capacity: int = 256) -> list[PresetCanFrame]:
         return self._read_many("preset_can_try_read", PresetCanFrame, channel, capacity)
 
@@ -1458,6 +1481,19 @@ class PresetCanUdsClient(_NativeHandle):
                     self._require_handle(), can_id, bool(is_fd), array, len(raw)
                 ),
                 "preset_can_uds_write",
+            )
+
+    def write_with_brs(
+        self, can_id: int, data, *, is_fd: bool = False, brs: bool = True
+    ) -> None:
+        raw, array = _byte_input(data)
+        name = "preset_can_uds_write_with_brs"
+        with self._lock:
+            self._sdk._check(
+                getattr(self._sdk.dll, name)(
+                    self._require_handle(), can_id, bool(is_fd), bool(brs), array, len(raw)
+                ),
+                name,
             )
 
     def _tp_write_data(

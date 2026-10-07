@@ -167,11 +167,14 @@ func CanWrite(client PresetCanUdsClient, id uint32, isFD bool, payload []byte) i
 
 func CanUdsWriteWithBrs(
 	client PresetCanUdsClient,
-	channel uint8,
 	id uint32,
+	isFD bool,
 	brs bool,
 	data []byte) int32 {
-	var _brs = 0
+	var fd, _brs = 0, 0
+	if isFD {
+		fd = 1
+	}
 	if brs {
 		_brs = 1
 	}
@@ -179,8 +182,8 @@ func CanUdsWriteWithBrs(
 		return invokeStatus(
 			"preset_can_uds_write_with_brs",
 			word(handle),
-			word(uintptr(channel)),
 			word(uintptr(id)),
+			word(uintptr(fd)),
 			word(uintptr(_brs)),
 			slicePointer(data),
 			word(uintptr(len(data))),
