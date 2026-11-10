@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define PRESET_RS_ABI_VERSION 12
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -15,7 +17,6 @@ extern "C" {
 #endif
 
 typedef struct PresetDevice PresetDevice;
-typedef struct PresetCanUdsClient PresetCanUdsClient;
 typedef struct PresetLinUdsClient PresetLinUdsClient;
 
 enum {
@@ -31,49 +32,26 @@ enum {
     PRESET_ERR_BUSY = -9,
     PRESET_ERR_ISOTP = -10,
     PRESET_ERR_PANIC = -11,
+    PRESET_ERR_CANCELLED = -12,
+    PRESET_ERR_WAIT_TIMEOUT = -13,
+    PRESET_ERR_NOT_READY = -14,
+    PRESET_ERR_DIAGNOSTIC_OCCUPIED = -15,
 };
 
+/* Platform backends. Zero on macOS. Bit positions stay stable across ABI versions. */
 enum {
-    PRESET_CAP_CLASSIC_CAN = UINT64_C(1) << 0,
-    PRESET_CAP_CAN_FD = UINT64_C(1) << 1,
-    PRESET_CAP_FUNCTIONAL = UINT64_C(1) << 2,
-    PRESET_CAP_RAW_CAN = UINT64_C(1) << 3,
-    PRESET_CAP_STANDARD_ID_ONLY = UINT64_C(1) << 4,
-    PRESET_CAP_RUNTIME_FLOW_CONTROL = UINT64_C(1) << 5,
-    PRESET_CAP_TOOMOSS_SHARED_DEVICE = UINT64_C(1) << 6,
-    PRESET_CAP_TOOMOSS_LIN = UINT64_C(1) << 7,
-    PRESET_CAP_TOOMOSS = UINT64_C(1) << 8,
     PRESET_CAP_TSMASTER = UINT64_C(1) << 9,
     PRESET_CAP_PCAN = UINT64_C(1) << 10,
     PRESET_CAP_VECTOR = UINT64_C(1) << 11,
-    PRESET_CAP_TOOMOSS_ELINS = UINT64_C(1) << 12,
-    PRESET_CAP_LIN_UDS = UINT64_C(1) << 13,
-    PRESET_CAP_FILE_LOGGING = UINT64_C(1) << 14,
-    PRESET_CAP_CAN_CHANNEL_SELECT = UINT64_C(1) << 15,
-    PRESET_CAP_BUS_LOAD = UINT64_C(1) << 16,
-    PRESET_CAP_RAW_CAN_METADATA = UINT64_C(1) << 17,
-    PRESET_CAP_RUNTIME_BRS = UINT64_C(1) << 18,
-    PRESET_CAP_EXPLICIT_FD_TIMING = UINT64_C(1) << 19,
     PRESET_CAP_AUTO_DRIVER = UINT64_C(1) << 20,
     PRESET_CAP_PCAN_LIN = UINT64_C(1) << 21,
     PRESET_CAP_TSMASTER_LIN = UINT64_C(1) << 22,
     PRESET_CAP_VECTOR_LIN = UINT64_C(1) << 23,
-    PRESET_CAP_RAW_CAN_TIMESTAMP = UINT64_C(1) << 24,
-    PRESET_CAP_MANUAL_ISOTP_FRAMING = UINT64_C(1) << 25,
-    PRESET_CAP_DEVICE_RAW_CAN = UINT64_C(1) << 26,
-    PRESET_CAP_MANUAL_TP_MODE = UINT64_C(1) << 27,
-    PRESET_CAP_TP_FRAME_BUILDER = UINT64_C(1) << 28,
 };
 
 enum {
     PRESET_CAN_DIRECTION_TX = 0,
     PRESET_CAN_DIRECTION_RX = 1,
-};
-
-enum {
-    PRESET_TP_FLOW_CONTINUE_TO_SEND = 0,
-    PRESET_TP_FLOW_WAIT = 1,
-    PRESET_TP_FLOW_OVERFLOW = 2,
 };
 
 enum {
@@ -257,41 +235,6 @@ enum {
     PRESET_TSMASTER_TC1043 = 70,
 };
 
-typedef struct PresetConfig {
-    uint32_t physical_id;
-    uint32_t response_id;
-    uint32_t functional_id;
-    uint32_t n_bs_ms;
-    uint32_t n_cr_ms;
-    uint32_t st_min_us;
-    uint32_t max_pdu_len; /* 1-1048576 bytes */
-    uint32_t rx_capacity; /* 1-65536 frames */
-    uint8_t is_fd;
-    uint8_t padding_enabled;
-    uint8_t padding_byte;
-    uint8_t block_size;
-    uint8_t max_wait_frames;
-    uint8_t raw_rx_enabled; /* 1 enables the raw capture ring */
-    uint8_t reserved[2];
-} PresetConfig;
-
-/* Stateless manual ISO-TP frame options. Automatic padding is disabled by
- * default. When enabled, frames are extended to at least 8 bytes and CAN-FD
- * frames are rounded up to a legal DLC using padding_byte. */
-typedef struct PresetTpFrameConfig {
-    uint8_t is_fd;
-    uint8_t padding_enabled;
-    uint8_t padding_byte;
-    uint8_t reserved;
-} PresetTpFrameConfig;
-
-/* One complete CAN data field produced by preset_can_tp_build_frames. */
-typedef struct PresetTpEncodedFrame {
-    uint8_t data_len;
-    uint8_t reserved[7];
-    uint8_t data[64];
-} PresetTpEncodedFrame;
-
 typedef struct PresetCanFdTiming {
     uint32_t nominal_brp;
     uint32_t nominal_tseg1;
@@ -303,39 +246,35 @@ typedef struct PresetCanFdTiming {
     uint32_t data_sjw;
 } PresetCanFdTiming;
 
-typedef struct PresetAutoConfig {
-    uint8_t channel;
+/* Shared bus settings. is_fd and brs describe the channel, not one request. */
+typedef struct PresetCanChannelConfig {
     uint8_t is_fd;
     uint8_t brs;
-    uint8_t reserved;
     uint32_t nominal_bitrate;
     uint32_t data_bitrate;
     uint32_t rx_buffer_size; /* 1-65536 frames */
     uint32_t poll_batch_size; /* 1-rx_buffer_size */
     uint32_t min_tx_interval_us;
-    uint32_t min_rx_poll_interval_us;
+    uint32_t min_rx_poll_interval_us; /* zero selects the 1000-us default */
+} PresetCanChannelConfig;
+
+typedef struct PresetAutoConfig {
+    uint8_t channel;
+    PresetCanChannelConfig can;
     /* PRESET_CAN_BACKEND_* priority order; zero entries are skipped. */
     uint8_t candidate_order[4];
-    uint8_t reserved_tail[4];
 } PresetAutoConfig;
 
 typedef struct PresetToomossConfig {
     uint8_t channel; /* zero-based: panel CAN1/2/3/4 = 0/1/2/3 */
-    uint8_t brs;
-    uint8_t reserved[2];
-    uint32_t nominal_bitrate;
-    uint32_t data_bitrate;
-    uint32_t rx_buffer_size; /* 1-65536 frames */
-    uint32_t poll_batch_size; /* 1-rx_buffer_size */
-    uint32_t min_tx_interval_us;
-    uint32_t min_rx_poll_interval_us;
+    /* Default helper uses 8192 for can.rx_buffer_size and can.poll_batch_size. */
+    PresetCanChannelConfig can;
 } PresetToomossConfig;
 
 typedef struct PresetToomossLinConfig {
-    uint8_t channels_mask; /* PRESET_TOOMOSS_CHANNEL_* bitmask */
-    uint8_t master_mode;   /* 1 master, 0 slave */
-    uint8_t reserved[2];
-    uint32_t baudrate;     /* 2000-5000000, default 19200 */
+    uint8_t channel;     /* zero-based: panel LIN1/2/3/4 = 0/1/2/3 */
+    uint8_t master_mode; /* 1 master, 0 slave */
+    uint32_t baudrate;   /* 2000-100000, default 19200 */
 } PresetToomossLinConfig;
 
 typedef struct PresetToomossElinsConfig {
@@ -346,15 +285,6 @@ typedef struct PresetToomossElinsConfig {
     uint32_t baudrate;        /* 2000-5000000, default 19200 */
     uint32_t receive_timeout_us; /* 0 selects the 1000us default */
 } PresetToomossElinsConfig;
-
-typedef struct PresetToomossLinFrame {
-    uint32_t timestamp;
-    uint8_t frame_id;
-    uint8_t data_len;
-    uint8_t classic_checksum;
-    uint8_t reserved;
-    uint8_t data[8];
-} PresetToomossLinFrame;
 
 typedef struct PresetPCANLinConfig {
     uint8_t channel;          /* logical channel and default enumeration index */
@@ -375,7 +305,7 @@ typedef struct PresetTSMasterLinConfig {
 
 typedef struct PresetVectorLinConfig {
     uint8_t application_channel; /* logical channel exposed by preset_rs */
-    uint8_t version;             /* 1=LIN 1.3, 2=LIN 2.0, 3=LIN 2.1 */
+    uint8_t version;             /* PRESET_LIN_PROTOCOL_* */
     uint8_t reserved[2];
     int32_t hardware_type;       /* PRESET_VECTOR_HWTYPE_* */
     uint32_t hardware_index;
@@ -384,11 +314,22 @@ typedef struct PresetVectorLinConfig {
     uint32_t rx_queue_size;      /* power of two, 8192-524288 */
 } PresetVectorLinConfig;
 
+/* classic_checksum is meaningful only when checksum_known is 1.
+ * checksum_known is 1 when the driver reports the type, or when the frame
+ * follows the checksum table configured for the channel (LIN 1.3 is classic;
+ * later protocols are enhanced except IDs 0x3C and 0x3D). It is not recovered
+ * from the bytes on the wire. timestamp is the vendor counter (Toomoss copies
+ * LIN_EX_MSG.Timestamp) and is zero when that counter is unavailable.
+ * timestamp_us is microseconds and is zero when the backend does not provide
+ * that unit. */
 typedef struct PresetLinFrame {
     uint8_t frame_id;
     uint8_t data_len;
-    uint8_t reserved[2];
+    uint8_t classic_checksum; /* 1 classic, 0 enhanced */
+    uint8_t checksum_known;   /* 0 unknown, 1 driver or channel configuration */
     uint8_t data[8];
+    uint32_t timestamp;
+    uint64_t timestamp_us;
 } PresetLinFrame;
 
 /* Matches the vendor ELINS_MSG layout (88 bytes). */
@@ -411,42 +352,22 @@ typedef struct PresetToomossElinsMessage {
 
 typedef struct PresetPCANConfig {
     uint8_t channel; /* zero-based PCAN USB channel, 0-15 */
-    uint8_t is_fd;   /* initialize with CAN_InitializeFD */
-    uint8_t brs;     /* set BRS on transmitted CAN-FD frames */
-    uint8_t reserved;
-    uint32_t nominal_bitrate;
-    uint32_t data_bitrate;
-    uint32_t rx_buffer_size; /* 1-65536 frames */
-    uint32_t poll_batch_size; /* 1-rx_buffer_size */
-    uint32_t min_tx_interval_us;
-    uint32_t min_rx_poll_interval_us;
+    PresetCanChannelConfig can;
 } PresetPCANConfig;
 
 typedef struct PresetTSMasterConfig {
     uint8_t application_channel; /* zero-based logical channel, 0-31 */
     uint8_t hardware_channel;    /* zero-based physical channel */
-    uint8_t is_fd;
-    uint8_t brs;
     int32_t hardware_index;      /* zero-based enumerated device index */
     int32_t device_type;
-    uint32_t nominal_bitrate;
-    uint32_t data_bitrate;
-    uint32_t rx_buffer_size; /* 1-65536 frames */
-    uint32_t poll_batch_size; /* 1-rx_buffer_size */
-    uint32_t min_tx_interval_us;
-    uint32_t min_rx_poll_interval_us;
+    PresetCanChannelConfig can;
 } PresetTSMasterConfig;
 
 typedef struct PresetVectorConfig {
     uint8_t application_channel; /* zero-based logical channel, 0-255 */
-    uint8_t is_fd;
-    uint8_t brs;
-    uint8_t reserved;
     int32_t hardware_type;       /* PRESET_VECTOR_HWTYPE_*; -1 selects any */
     uint32_t hardware_index;     /* zero-based device index */
     uint32_t hardware_channel;   /* zero-based physical channel */
-    uint32_t nominal_bitrate;
-    uint32_t data_bitrate;
     uint32_t nominal_sjw;
     uint32_t nominal_tseg1;
     uint32_t nominal_tseg2;
@@ -454,32 +375,22 @@ typedef struct PresetVectorConfig {
     uint32_t data_tseg1;
     uint32_t data_tseg2;
     uint32_t driver_rx_queue_size; /* power of two, 8192-524288 */
-    uint32_t rx_buffer_size; /* 1-65536 frames */
-    uint32_t poll_batch_size; /* 1-rx_buffer_size */
-    uint32_t min_tx_interval_us;
-    uint32_t min_rx_poll_interval_us;
+    PresetCanChannelConfig can;
 } PresetVectorConfig;
 
-typedef struct PresetCanFrame {
-    uint32_t id;
-    uint8_t data_len;
-    uint8_t is_fd;
-    uint8_t reserved[2];
-    uint8_t data[64];
-} PresetCanFrame;
-
-/* Extended raw-frame representation. timestamp_us is the vendor hardware or
- * driver monotonic timestamp normalized to microseconds; zero means unavailable.
- * Do not mix preset_can_uds_try_read and preset_can_uds_try_read_ex on the same
- * client because both drain the same raw capture ring. */
+/* timestamp_us is the vendor hardware or driver monotonic timestamp in
+ * microseconds; zero means unavailable. Direct reads drain the channel queue
+ * and report RX. Observer reads drain only that observer. */
 typedef struct PresetCanFrameEx {
     uint32_t id;
-    uint8_t dlc;
     uint8_t data_len;
     uint8_t direction; /* PRESET_CAN_DIRECTION_* */
     uint8_t is_fd;
     uint8_t brs;
-    uint8_t reserved[7];
+    uint8_t is_extended; /* 29-bit identifier format */
+    uint8_t is_remote;   /* classic CAN RTR; data_len retains the requested DLC */
+    uint8_t esi;         /* receive-only CAN-FD error-state indicator */
+    uint8_t reserved;    /* must be zero when transmitting */
     uint64_t timestamp_us;
     uint8_t data[64];
 } PresetCanFrameEx;
@@ -502,8 +413,6 @@ typedef struct PresetBusLoad {
 PRESET_RS_API const char *preset_version(void);
 PRESET_RS_API uint32_t preset_abi_version(void);
 PRESET_RS_API uint64_t preset_get_capabilities(void);
-PRESET_RS_API PresetConfig preset_default_config(void);
-PRESET_RS_API PresetTpFrameConfig preset_tp_frame_default_config(void);
 PRESET_RS_API PresetAutoConfig preset_auto_default_config(void);
 /* Explicit 500 kbit/s / 2 Mbit/s examples for each vendor clock/layout.
  * Keep the device config bitrates consistent for bus-load reporting. */
@@ -540,7 +449,10 @@ PRESET_RS_API int32_t preset_set_log_filter(
     size_t id_count);
 
 /* Every backend uses explicit device ownership. Opening a device never creates
- * a UDS client, and releasing a UDS client never closes the device. */
+ * a runtime or LIN client; releasing either never closes the device.
+ * Configuration pointers are required and NULL returns PRESET_ERR_NULL_PTR.
+ * Use preset_*_default_config() for defaults. A null CAN-FD timing pointer
+ * derives controller timing from the channel bitrates. */
 /* Windows AutoDriver tries candidate_order until a mode-compatible backend
  * opens successfully. Defaults: Toomoss, TSMaster/TC1016, PCAN, Vector/VN1640. */
 PRESET_RS_API int32_t preset_auto_open(
@@ -553,13 +465,13 @@ PRESET_RS_API int32_t preset_device_get_backend(
 
 PRESET_RS_API int32_t preset_toomoss_open(PresetDevice **out_device);
 
-/* May be called repeatedly to initialize distinct CAN channels. CAN-FD is
- * attempted first; adapters that reject it automatically fall back to the
- * classic CAN API. A channel that fell back cannot serve an FD UDS client. */
+/* May be called repeatedly to initialize distinct CAN channels.
+ * can.is_fd = 1 attempts CAN-FD and falls back to classic CAN when the adapter
+ * rejects it. A channel that fell back cannot serve FD diagnostic requests.
+ * A null timing pointer derives BRP/TSEG/SJW from the bitrates. Toomoss CAN
+ * initialization enables internal 120-ohm termination and automatic
+ * retransmission in both CAN-FD and classic/fallback modes. */
 PRESET_RS_API int32_t preset_toomoss_can_init(
-    PresetDevice *device,
-    const PresetToomossConfig *device_config);
-PRESET_RS_API int32_t preset_toomoss_can_init_with_timing(
     PresetDevice *device,
     const PresetToomossConfig *device_config,
     const PresetCanFdTiming *timing);
@@ -568,26 +480,12 @@ PRESET_RS_API int32_t preset_toomoss_lin_init(
     PresetDevice *device,
     const PresetToomossLinConfig *config);
 
-PRESET_RS_API int32_t preset_toomoss_lin_write(
-    PresetDevice *device,
-    uint8_t channel,
-    uint8_t frame_id,
-    const uint8_t *data,
-    size_t data_len);
-
-/* Returns PRESET_ERR_TIMEOUT when no slave responds to the master header. */
-PRESET_RS_API int32_t preset_toomoss_lin_read(
-    PresetDevice *device,
-    uint8_t channel,
-    uint8_t frame_id,
-    PresetToomossLinFrame *out_frame);
-
 /* Read frames buffered by LIN_EX_SlaveGetData. On input, *inout_len is the
  * frame capacity (1-512); on success it is the number of frames written. */
 PRESET_RS_API int32_t preset_toomoss_lin_try_read(
     PresetDevice *device,
     uint8_t channel,
-    PresetToomossLinFrame *frames,
+    PresetLinFrame *frames,
     size_t *inout_len);
 
 PRESET_RS_API int32_t preset_toomoss_lin_break(
@@ -609,28 +507,54 @@ PRESET_RS_API int32_t preset_toomoss_elins_read(
     PresetToomossElinsMessage *messages,
     size_t *inout_len);
 
-/* Windows LIN master backends. Each open explicitly initializes one channel
- * and returns an owning device handle. The matching init function adds another
- * channel to a device of the same vendor. CAN and LIN channels may share that
- * vendor device handle. Add all TSMaster mappings before creating any client. */
-PRESET_RS_API int32_t preset_pcan_lin_open(
-    const PresetPCANLinConfig *config,
-    PresetDevice **out_device);
+/* Windows LIN master init adds one channel to an already opened device of the
+ * same vendor. CAN and LIN channels may share that device handle. Add all
+ * TSMaster mappings before creating any client. */
 PRESET_RS_API int32_t preset_pcan_lin_init(
     PresetDevice *device,
     const PresetPCANLinConfig *config);
-PRESET_RS_API int32_t preset_tsmaster_lin_open(
-    const PresetTSMasterLinConfig *config,
-    PresetDevice **out_device);
 PRESET_RS_API int32_t preset_tsmaster_lin_init(
     PresetDevice *device,
     const PresetTSMasterLinConfig *config);
-PRESET_RS_API int32_t preset_vector_lin_open(
-    const PresetVectorLinConfig *config,
-    PresetDevice **out_device);
 PRESET_RS_API int32_t preset_vector_lin_init(
     PresetDevice *device,
     const PresetVectorLinConfig *config);
+
+/* Same configs as the master init functions, but the channel is a LIN slave.
+ * Toomoss slave mode stays PresetToomossLinConfig.master_mode = 0. */
+PRESET_RS_API int32_t preset_pcan_lin_init_slave(
+    PresetDevice *device,
+    const PresetPCANLinConfig *config);
+PRESET_RS_API int32_t preset_tsmaster_lin_init_slave(
+    PresetDevice *device,
+    const PresetTSMasterLinConfig *config);
+PRESET_RS_API int32_t preset_vector_lin_init_slave(
+    PresetDevice *device,
+    const PresetVectorLinConfig *config);
+
+/* Publish 1-8 response bytes for a 6-bit ID. classic_checksum and single_shot
+ * are 0 or 1. Toomoss, PCAN, and Vector require a slave channel. Vector
+ * rejects single_shot. TSMaster returns PRESET_ERR_UNSUPPORTED. */
+PRESET_RS_API int32_t preset_lin_slave_set_response(
+    PresetDevice *device,
+    uint8_t channel,
+    uint8_t frame_id,
+    const uint8_t *data,
+    size_t data_len,
+    uint8_t classic_checksum,
+    uint8_t single_shot);
+
+PRESET_RS_API int32_t preset_lin_slave_clear_response(
+    PresetDevice *device,
+    uint8_t channel,
+    uint8_t frame_id);
+
+/* Wake a sleeping bus. Toomoss sends LIN_EX_MasterBreak and requires master
+ * mode. Vector sends xlLinWakeUp. PCAN sends LIN_XmtWakeUp and requires slave
+ * mode. TSMaster returns PRESET_ERR_UNSUPPORTED. */
+PRESET_RS_API int32_t preset_lin_wakeup(
+    PresetDevice *device,
+    uint8_t channel);
 
 PRESET_RS_API int32_t preset_lin_master_write(
     PresetDevice *device,
@@ -639,7 +563,12 @@ PRESET_RS_API int32_t preset_lin_master_write(
     const uint8_t *data,
     size_t data_len);
 
-/* Sends the requested master header and waits up to timeout_ms. */
+/* Sends the requested master header and waits up to timeout_ms.
+ * PCAN uses subscriber auto-length. TSMaster still requests 8 data bytes.
+ * Toomoss polls LIN_EX_MasterSendMsg and LIN_EX_GetMsg and releases the
+ * adapter lock between polls. checksum_known follows the comment on
+ * PresetLinFrame. A checksum or synchronization error returns
+ * PRESET_ERR_TRANSPORT immediately. No slave response is PRESET_ERR_TIMEOUT. */
 PRESET_RS_API int32_t preset_lin_master_read(
     PresetDevice *device,
     uint8_t channel,
@@ -658,24 +587,6 @@ PRESET_RS_API int32_t preset_lin_uds_client_new(
     uint8_t nad,
     PresetLinUdsClient **out_client);
 
-/* payload contains SID followed by service data. The timeout covers request
- * transmission and response reception. The client builds LIN TP frames on
- * 0x3C, polls 0x3D, reassembles the response, handles NRC 0x78 and returns the
- * actual response NAD. Physical NADs must be 0x01-0x7D. Functional NAD 0x7E
- * and broadcast/configuration NAD 0x7F accept a response from an actual node
- * NAD; callers must use them only when the network guarantees one responder.
- * A request that suppresses its positive response succeeds with length zero
- * when the response timeout expires without a negative response. */
-PRESET_RS_API int32_t preset_lin_uds_request(
-    PresetLinUdsClient *client,
-    const uint8_t *payload,
-    size_t payload_len,
-    uint32_t timeout_ms,
-    uint8_t *out_nad,
-    uint8_t *out_data,
-    size_t out_capacity,
-    size_t *out_len);
-
 /* Set both the LIN TP inter-frame transmit delay and response polling interval.
  * The default is 10 ms. Valid values are 1 through 1000 ms, and a new value is
  * applied to requests started after this call. */
@@ -687,53 +598,32 @@ PRESET_RS_API int32_t preset_lin_uds_set_poll_interval(
 PRESET_RS_API int32_t preset_lin_uds_client_close(
     PresetLinUdsClient **client);
 
-/* PCAN, TSMaster, and Vector open/init calls return PRESET_ERR_UNSUPPORTED off
- * Windows. Each open initializes the first channel. The matching can_init may
- * then add distinct channels to the same PresetDevice. Add all TSMaster
- * channels before creating CAN clients. */
-PRESET_RS_API int32_t preset_pcan_open(
-    const PresetPCANConfig *device_config,
-    PresetDevice **out_device);
-PRESET_RS_API int32_t preset_pcan_open_with_timing(
-    const PresetPCANConfig *device_config,
-    const PresetCanFdTiming *timing,
-    PresetDevice **out_device);
+/* PCAN, TSMaster, and Vector open calls return an empty device and
+ * PRESET_ERR_UNSUPPORTED off Windows. can_init adds one channel. A null PCAN
+ * timing pointer derives BRP/TSEG/SJW from the bitrates. Add all TSMaster
+ * channels before creating CAN runtimes. */
+PRESET_RS_API int32_t preset_pcan_open(PresetDevice **out_device);
 PRESET_RS_API int32_t preset_pcan_can_init(
-    PresetDevice *device,
-    const PresetPCANConfig *device_config);
-PRESET_RS_API int32_t preset_pcan_can_init_with_timing(
     PresetDevice *device,
     const PresetPCANConfig *device_config,
     const PresetCanFdTiming *timing);
 
-PRESET_RS_API int32_t preset_tsmaster_open(
-    const PresetTSMasterConfig *device_config,
-    PresetDevice **out_device);
+PRESET_RS_API int32_t preset_tsmaster_open(PresetDevice **out_device);
 PRESET_RS_API int32_t preset_tsmaster_can_init(
     PresetDevice *device,
     const PresetTSMasterConfig *device_config);
 
-PRESET_RS_API int32_t preset_vector_open(
-    const PresetVectorConfig *device_config,
-    PresetDevice **out_device);
+PRESET_RS_API int32_t preset_vector_open(PresetDevice **out_device);
 PRESET_RS_API int32_t preset_vector_can_init(
     PresetDevice *device,
     const PresetVectorConfig *device_config);
 
 /* Raw CAN I/O directly on an initialized channel. These functions do not
  * create/register an ISO-TP or UDS client. They return PRESET_ERR_BUSY while a
- * UDS client owns the same channel. Direct reads report received frames only
- * and return zero frames when called before the backend's next RX poll time. */
-PRESET_RS_API int32_t preset_can_write(
-    PresetDevice *device,
-    uint8_t channel,
-    uint32_t id,
-    uint8_t is_fd,
-    const uint8_t *data,
-    size_t data_len);
-
-/* Set BRS for this frame only; brs must be 0 or 1. Classic CAN ignores BRS.
- * The channel's configured BRS setting is unchanged. */
+ * CAN runtime owns the same channel. Direct reads report received frames only
+ * and return zero frames when called before the backend's next RX poll time.
+ * brs must be 0 or 1. Classic CAN ignores BRS. The channel's configured BRS
+ * setting is unchanged. */
 PRESET_RS_API int32_t preset_can_write_with_brs(
     PresetDevice *device,
     uint8_t channel,
@@ -743,11 +633,13 @@ PRESET_RS_API int32_t preset_can_write_with_brs(
     const uint8_t *data,
     size_t data_len);
 
-PRESET_RS_API int32_t preset_can_try_read(
+/* Structured raw write supporting standard/extended data frames and classic
+ * CAN remote frames. direction must be PRESET_CAN_DIRECTION_TX; esi and
+ * reserved must be zero. CAN-FD remote frames are invalid. */
+PRESET_RS_API int32_t preset_can_write_ex(
     PresetDevice *device,
     uint8_t channel,
-    PresetCanFrame *frames,
-    size_t *inout_len);
+    const PresetCanFrameEx *frame);
 
 PRESET_RS_API int32_t preset_can_try_read_ex(
     PresetDevice *device,
@@ -755,286 +647,186 @@ PRESET_RS_API int32_t preset_can_try_read_ex(
     PresetCanFrameEx *frames,
     size_t *inout_len);
 
-/* Pure, stateless ISO-TP frame encoders. These functions do not access a CAN
- * device or start a worker. out_data receives the complete CAN data field. On
- * input, out_capacity is its size; out_len always receives the required or
- * written byte count. Passing NULL/0 for out_data/out_capacity can be used to
- * query the required size and returns PRESET_ERR_BUFFER_TOO_SMALL. A NULL
- * config selects classic CAN with automatic padding disabled. */
-PRESET_RS_API int32_t preset_can_tp_encode_single_frame(
-    const PresetTpFrameConfig *config,
-    const uint8_t *data,
-    size_t data_len,
-    uint8_t *out_data,
-    size_t out_capacity,
-    size_t *out_len);
-
-PRESET_RS_API int32_t preset_can_tp_encode_first_frame(
-    const PresetTpFrameConfig *config,
-    const uint8_t *first_chunk,
-    size_t first_chunk_len,
-    uint32_t total_message_size,
-    uint8_t *out_data,
-    size_t out_capacity,
-    size_t *out_len);
-
-PRESET_RS_API int32_t preset_can_tp_encode_flow_control_frame(
-    const PresetTpFrameConfig *config,
-    uint8_t flow_status,
-    uint8_t block_size,
-    uint8_t st_min,
-    uint8_t *out_data,
-    size_t out_capacity,
-    size_t *out_len);
-
-PRESET_RS_API int32_t preset_can_tp_encode_consecutive_frame(
-    const PresetTpFrameConfig *config,
-    const uint8_t *data_chunk,
-    size_t data_chunk_len,
-    uint8_t sequence_number,
-    uint8_t *out_data,
-    size_t out_capacity,
-    size_t *out_len);
-
-/* Split a complete ISO-TP PDU into ordered CAN data fields. CAN-FD output is
- * padded only to the next legal DLC using padding_byte; Classic CAN output is
- * not padded. Pass frames = NULL to query the required frame count. When the
- * array is absent or too small, *inout_frame_count receives the required count,
- * PRESET_ERR_BUFFER_TOO_SMALL is returned, and no frames are written. */
-PRESET_RS_API int32_t preset_can_tp_build_frames(
-    const uint8_t *payload,
-    size_t payload_len,
-    uint8_t is_fd,
-    uint8_t padding_byte,
-    PresetTpEncodedFrame *frames,
-    size_t *inout_frame_count);
-
-/* Stateless manual ISO-TP writers. They only encode and send the requested
- * frame; the caller owns sequence numbering, BlockSize, STmin, and timing.
- * A NULL config selects classic CAN with padding disabled. With padding
- * disabled, the encoded length must already be legal for the selected CAN
- * format. With padding enabled, the frame is extended to at least 8 bytes and
- * CAN-FD lengths are rounded up to a legal DLC using padding_byte. Padding in
- * First Frames and non-final Consecutive Frames is transmitted as TP data, so
- * callers must include those bytes when advancing their message offset. */
-PRESET_RS_API int32_t preset_can_tp_write_single_frame(
-    PresetDevice *device,
-    uint8_t channel,
-    uint32_t id,
-    const PresetTpFrameConfig *config,
-    const uint8_t *data,
-    size_t data_len);
-
-PRESET_RS_API int32_t preset_can_tp_write_first_frame(
-    PresetDevice *device,
-    uint8_t channel,
-    uint32_t id,
-    const PresetTpFrameConfig *config,
-    const uint8_t *first_chunk,
-    size_t first_chunk_len,
-    uint32_t total_message_size);
-
-PRESET_RS_API int32_t preset_can_tp_write_flow_control_frame(
-    PresetDevice *device,
-    uint8_t channel,
-    uint32_t id,
-    const PresetTpFrameConfig *config,
-    uint8_t flow_status,
-    uint8_t block_size,
-    uint8_t st_min);
-
-PRESET_RS_API int32_t preset_can_tp_write_consecutive_frame(
-    PresetDevice *device,
-    uint8_t channel,
-    uint32_t id,
-    const PresetTpFrameConfig *config,
-    const uint8_t *data_chunk,
-    size_t data_chunk_len,
-    uint8_t sequence_number);
-
-/* The CAN UDS client borrows RX/TX from one initialized channel. Different
- * channels may have active clients concurrently; each individual channel may
- * have at most one active client. Creating this handle is optional; use the
- * device-level raw/manual APIs above when UDS is not needed. For Toomoss and
- * PCAN, channel is the
- * config channel (Toomoss: panel CAN1 = 0). TSMaster uses the corresponding
- * config channel; Vector uses application_channel. */
-PRESET_RS_API int32_t preset_can_uds_client_new(
-    PresetDevice *device,
-    uint8_t channel,
-    const PresetConfig *config,
-    PresetCanUdsClient **out_client);
-
 /* Close any backend. Returns PRESET_ERR_BUSY and leaves *device unchanged while
- * a CAN or LIN UDS client is active. Release clients, then retry the close. */
+ * a CAN runtime or LIN UDS client is active. Release those handles, then retry. */
 PRESET_RS_API int32_t preset_device_close(PresetDevice **device);
 
-/* For recognized sub-function services, a suppressed positive response
- * completes successfully with an empty output buffer if no negative response
- * arrives before timeout. SID 0x2F is not a sub-function service. */
-PRESET_RS_API int32_t preset_can_uds_request(
-    PresetCanUdsClient *client,
-    const uint8_t *payload,
-    size_t payload_len,
-    uint32_t timeout_ms,
-    uint8_t *out_data,
-    size_t out_capacity,
-    size_t *out_len);
-
-PRESET_RS_API int32_t preset_can_uds_functional_request(
-    PresetCanUdsClient *client,
-    const uint8_t *payload,
-    size_t payload_len,
-    uint32_t timeout_ms,
-    uint8_t *out_data,
-    size_t out_capacity,
-    size_t *out_len);
-
-/* Update values advertised by subsequently generated ISO-TP flow-control
- * frames. STmin is expressed in whole milliseconds (0-127); BlockSize is
- * 0-255, where 0 allows all remaining consecutive frames. */
-PRESET_RS_API int32_t preset_can_uds_set_default_st_min(
-    PresetCanUdsClient *client,
-    uint32_t st_min_ms);
-
-PRESET_RS_API int32_t preset_can_uds_set_default_block_size(
-    PresetCanUdsClient *client,
-    uint32_t block_size);
-
-/* When enabled is 1, automatic flow-control transmission is disabled while
- * ISO-TP receive state and timers remain active. The caller must send flow-
- * control frames through preset_can_uds_tp_write_flow_control_frame or
- * preset_can_uds_write. Pass 0 to restore automatic mode. */
-PRESET_RS_API int32_t preset_can_uds_set_manual_flow_control(
-    PresetCanUdsClient *client,
-    uint8_t enabled);
-
-/* Manual TP mode keeps the CAN worker and raw capture active but suspends all
- * automatic ISO-TP parsing/transmission. Entering or leaving the mode returns
- * PRESET_ERR_BUSY while an automatic UDS request is pending. Automatic request
- * calls also return PRESET_ERR_BUSY while the mode is enabled. Use this mode
- * for malformed/incomplete TP sequences or tests that intentionally omit FC. */
-PRESET_RS_API int32_t preset_can_uds_set_manual_tp_mode(
-    PresetCanUdsClient *client,
-    uint8_t enabled);
-
-/* Changes/reads BRS for subsequently transmitted CAN-FD frames. Classic CAN
- * frames are unaffected. */
-PRESET_RS_API int32_t preset_can_uds_set_brs(
-    PresetCanUdsClient *client,
-    uint8_t enabled);
-PRESET_RS_API int32_t preset_can_uds_get_brs(
-    PresetCanUdsClient *client,
-    uint8_t *out_enabled);
-
-/* When enabled, successfully transmitted frames also enter the raw ring with
- * direction PRESET_CAN_DIRECTION_TX. Raw capture must have been enabled in
- * PresetConfig before creating the client. */
-PRESET_RS_API int32_t preset_can_uds_set_raw_tx_echo(
-    PresetCanUdsClient *client,
-    uint8_t enabled);
-
-PRESET_RS_API int32_t preset_can_uds_write(
-    PresetCanUdsClient *client,
-    uint32_t id,
-    uint8_t is_fd,
-    const uint8_t *data,
-    size_t data_len);
-
-/* Set BRS for this frame only; brs must be 0 or 1. Classic CAN ignores BRS.
- * The client's default BRS setting is unchanged. */
-PRESET_RS_API int32_t preset_can_uds_write_with_brs(
-    PresetCanUdsClient *client,
-    uint32_t id,
-    uint8_t is_fd,
-    uint8_t brs,
-    const uint8_t *data,
-    size_t data_len);
-
-/* Manual TP writers routed through an existing client's CAN worker. They are
- * serialized with other worker writes and do not advance automatic ISO-TP TX
- * state. Enable manual TP mode above to isolate protocol-conformance tests;
- * do not interleave these calls with an automatic UDS request. */
-PRESET_RS_API int32_t preset_can_uds_tp_write_single_frame(
-    PresetCanUdsClient *client,
-    uint32_t id,
-    const PresetTpFrameConfig *config,
-    const uint8_t *data,
-    size_t data_len);
-
-PRESET_RS_API int32_t preset_can_uds_tp_write_first_frame(
-    PresetCanUdsClient *client,
-    uint32_t id,
-    const PresetTpFrameConfig *config,
-    const uint8_t *first_chunk,
-    size_t first_chunk_len,
-    uint32_t total_message_size);
-
-PRESET_RS_API int32_t preset_can_uds_tp_write_flow_control_frame(
-    PresetCanUdsClient *client,
-    uint32_t id,
-    const PresetTpFrameConfig *config,
-    uint8_t flow_status,
-    uint8_t block_size,
-    uint8_t st_min);
-
-PRESET_RS_API int32_t preset_can_uds_tp_write_consecutive_frame(
-    PresetCanUdsClient *client,
-    uint32_t id,
-    const PresetTpFrameConfig *config,
-    const uint8_t *data_chunk,
-    size_t data_chunk_len,
-    uint8_t sequence_number);
-
-/* Raw capture must be enabled with PresetConfig.raw_rx_enabled before the
- * client is created. ISO-TP response processing is independent of this ring. */
-PRESET_RS_API int32_t preset_can_uds_try_read(
-    PresetCanUdsClient *client,
-    PresetCanFrame *frames,
-    size_t *inout_len);
-
-PRESET_RS_API int32_t preset_can_uds_try_read_ex(
-    PresetCanUdsClient *client,
-    PresetCanFrameEx *frames,
-    size_t *inout_len);
-
-PRESET_RS_API int32_t preset_can_uds_rx_get_stats(
-    PresetCanUdsClient *client,
-    PresetRxStats *out_stats);
-
-/* Enable or disable continuous bus-load measurement. It is enabled by default
- * for compatibility. Changing the state clears the current window. Pass only
- * 0 or 1. */
-PRESET_RS_API int32_t preset_can_uds_set_bus_load_enabled(
-    PresetCanUdsClient *client,
-    uint8_t enabled);
-
-/* Total bus occupancy as a 0.0-1.0 ratio. TSMaster uses its native bus-load
- * statistic; other backends estimate occupancy over a one-second sliding
- * window. frame_count always comes from the software window. TX echoes
- * matching recent transmissions are counted once. When measurement is
- * disabled, load and frame_count are zero. */
-PRESET_RS_API int32_t preset_can_uds_get_bus_load(
-    PresetCanUdsClient *client,
-    PresetBusLoad *out_load);
-
-/* Includes asynchronous errors reported by the CAN worker. */
-PRESET_RS_API int32_t preset_can_uds_last_error(
-    PresetCanUdsClient *client,
-    uint8_t *out_data,
-    size_t out_capacity,
-    size_t *out_len);
-
-/* Latest synchronous C API error on the calling thread, including device
- * open/init failures. */
+/* Latest synchronous error on the calling thread, including open/init/write
+ * and validation failures. Status-call success clears it. This getter preserves
+ * it across size queries. Workers never modify another thread's error storage.
+ * Async diagnostic outcomes/text belong to request_get_info/copy_error; CAN
+ * faults and raw driver rejections also belong to runtime_copy_error. Error
+ * text is UTF-8 without NUL termination; NULL/0 queries the required byte count. */
 PRESET_RS_API int32_t preset_last_error(
     uint8_t *out_data,
     size_t out_capacity,
     size_t *out_len);
 
-/* Releasing a CAN UDS client stops its worker but never closes its device. */
-PRESET_RS_API int32_t preset_can_uds_client_close(
-    PresetCanUdsClient **client);
+/* ABI v12. Diagnostic STmin values are milliseconds, 0..127. CAN-FD and BRS
+ * for a request come from the initialized channel. Calls on live handles may
+ * run concurrently, but close must not race a call using the same raw pointer.
+ * Close clears *handle. Check preset_abi_version() before creating handles.
+ */
+typedef struct PresetCanRuntime PresetCanRuntime;
+typedef struct PresetCanObserver PresetCanObserver;
+typedef struct PresetCanPeriodic PresetCanPeriodic;
+typedef struct PresetDiagnosticRequest PresetDiagnosticRequest;
+
+enum {
+    PRESET_RUNTIME_RUNNING = 0, PRESET_RUNTIME_RECOVERING = 1,
+    PRESET_RUNTIME_STOPPING = 2, PRESET_RUNTIME_STOPPED = 3,
+    PRESET_RUNTIME_FAULTED = 4
+};
+enum {
+    PRESET_REQUEST_ACCEPTED = 0, PRESET_REQUEST_TRANSMITTING = 1,
+    PRESET_REQUEST_WAIT_RESPONSE = 2, PRESET_REQUEST_RECEIVING = 3,
+    PRESET_REQUEST_RESPONSE_PENDING = 4, PRESET_REQUEST_CANCEL_REQUESTED = 5,
+    PRESET_REQUEST_COMPLETED = 6, PRESET_REQUEST_CANCELLED = 7,
+    PRESET_REQUEST_TIMED_OUT = 8, PRESET_REQUEST_FAILED = 9
+};
+enum {
+    PRESET_OUTCOME_NONE = 0, PRESET_OUTCOME_POSITIVE = 1,
+    PRESET_OUTCOME_NEGATIVE = 2, PRESET_OUTCOME_SUPPRESSED_POSITIVE = 3,
+    PRESET_OUTCOME_CANCELLED = 4, PRESET_OUTCOME_TIMEOUT = 5,
+    PRESET_OUTCOME_ERROR = 6
+};
+enum {
+    PRESET_TIMEOUT_NONE = 0, PRESET_TIMEOUT_P2 = 1, PRESET_TIMEOUT_P2_STAR = 2,
+    PRESET_TIMEOUT_TOTAL = 3, PRESET_TIMEOUT_N_BS = 4, PRESET_TIMEOUT_N_CR = 5
+};
+enum {
+    PRESET_ADDRESS_PHYSICAL = 0, PRESET_ADDRESS_FUNCTIONAL = 1
+};
+typedef struct PresetCanRuntimeOptions {
+    uint32_t command_capacity, recovery_ms;
+} PresetCanRuntimeOptions;
+typedef struct PresetCanObserverOptions {
+    uint32_t capacity;
+    uint8_t rx, tx;
+} PresetCanObserverOptions;
+typedef struct PresetRequestTimeouts {
+    uint32_t p2_timeout_ms, p2_star_timeout_ms, total_timeout_ms;
+} PresetRequestTimeouts;
+typedef struct PresetCanDiagnosticConfig {
+    uint32_t physical_id, response_id, functional_id;
+    uint32_t n_bs_ms, n_cr_ms, st_min_ms, max_pdu_len, tx_st_min_override_ms;
+    uint8_t addressing, padding_enabled, padding_byte, block_size;
+    uint8_t max_wait_frames, tx_st_min_override_enabled, manual_flow_control;
+} PresetCanDiagnosticConfig;
+typedef struct PresetDiagnosticRequestInfo {
+    uint64_t transaction_id, runtime_epoch, elapsed_us, response_len;
+    uint32_t state, outcome;
+    int32_t error_code;
+    uint32_t timeout_kind, pending_count, response_address;
+    uint8_t last_nrc;
+} PresetDiagnosticRequestInfo;
+typedef struct PresetCanCaptureEvent {
+    uint64_t sequence, runtime_epoch, transaction_id;
+    PresetCanFrameEx frame;
+} PresetCanCaptureEvent;
+typedef struct PresetCanRuntimeInfo {
+    uint64_t runtime_epoch, transaction_id, recovery_remaining_us;
+    uint32_t state, physical_id, response_id, functional_id;
+    uint8_t call_in_progress;
+} PresetCanRuntimeInfo;
+
+/* Every channel argument selects an initialized logical slot, not a vendor
+ * handle or physical port. Toomoss/PCAN: config.channel; TSMaster/Vector:
+ * config.application_channel. Toomoss panel CAN1 is slot 0. AutoDriver uses
+ * config.channel for both its initial logical slot and physical selection.
+ * options: command_capacity=1..4096 (suggested 256),
+ * recovery_ms=0..60000 (suggested 100). A second runtime on the channel is BUSY.
+ * Runtime creation borrows an initialized channel; it never initializes hardware.
+ */
+PRESET_RS_API int32_t preset_can_runtime_new(PresetDevice *, uint8_t channel,
+    const PresetCanRuntimeOptions *, PresetCanRuntime **);
+PRESET_RS_API int32_t preset_can_runtime_get_info(PresetCanRuntime *, PresetCanRuntimeInfo *);
+PRESET_RS_API int32_t preset_can_runtime_copy_error(PresetCanRuntime *, uint8_t *, size_t, size_t *);
+/* Synchronous driver write, bounded queue admission. Occupied IDs return -15
+ * except valid manual FC for the active manual-flow-control transaction.
+ * Driver write rejection is returned without faulting the runtime. */
+PRESET_RS_API int32_t preset_can_runtime_write_with_brs(PresetCanRuntime *, uint32_t id,
+    uint8_t is_fd, uint8_t brs, const uint8_t *, size_t);
+PRESET_RS_API int32_t preset_can_runtime_write_ex(
+    PresetCanRuntime *, const PresetCanFrameEx *frame);
+/* Nonblocking cached software estimate; updated at least once each 10 ms worker opportunity. */
+PRESET_RS_API int32_t preset_can_runtime_get_bus_load(PresetCanRuntime *, PresetBusLoad *);
+/* At most 16 observers, 1..65536 events each; drop oldest. rx/tx are 0 or 1.
+ * try_read capacity <= 4096. Frames retain extended/RTR/ESI metadata.
+ * Software TX mirrors are emitted after driver success; driver TX echoes are
+ * deduplicated, not misrepresented as additional confirmed transmissions.
+ */
+PRESET_RS_API int32_t preset_can_observer_new(PresetCanRuntime *, const PresetCanObserverOptions *, PresetCanObserver **);
+PRESET_RS_API int32_t preset_can_observer_try_read(PresetCanObserver *, PresetCanCaptureEvent *, size_t, size_t *);
+PRESET_RS_API int32_t preset_can_observer_get_stats(PresetCanObserver *, PresetRxStats *);
+PRESET_RS_API int32_t preset_can_observer_close(PresetCanObserver **);
+/* Worker-scheduled periodic transmission. At most 64 groups of 1..64 frames
+ * per runtime; each group transmits all its frames once per period_ms (>= 1)
+ * and groups run independently. The first tick is immediate. All fields are
+ * copied before the call returns. direction must be PRESET_CAN_DIRECTION_TX;
+ * flags follow preset_can_runtime_write_ex rules, and scheduling CAN-FD on a
+ * classic channel returns PRESET_ERR_INVALID_ARG. Frames whose ID is reserved
+ * by the active diagnostic transaction are skipped for that tick, including
+ * recovery. Successful writes enter TX observers, logging and bus-load
+ * accounting. A driver write rejection is retained in runtime_copy_error
+ * without faulting the runtime. Ticks missed while a driver call is slow are
+ * skipped rather than burst-transmitted.
+ */
+PRESET_RS_API int32_t preset_can_periodic_start(
+    PresetCanRuntime *,
+    const PresetCanFrameEx *frames,
+    size_t count,
+    uint32_t period_ms,
+    PresetCanPeriodic **);
+/* Nonblocking and idempotent; stops future ticks. The handle stays valid. */
+PRESET_RS_API int32_t preset_can_periodic_cancel(PresetCanPeriodic *);
+/* Cancels and releases the handle. Releasing is also required before the
+ * runtime can close; a NULL handle or repeated close is PRESET_OK. */
+PRESET_RS_API int32_t preset_can_periodic_close(PresetCanPeriodic **);
+/* timeouts must all be positive (suggested 1000/5000/30000 ms).
+ * One active request per channel, at most 64 retained request results.
+ * Start copies PDU and configuration before returning, with no ECU wait.
+ * st_min_ms and tx_st_min_override_ms are 0..127 milliseconds;
+ * block_size is 0..255 (0 means unlimited). manual_flow_control is 0 or 1.
+ * Manual FC suppresses automatic FC but retains reassembly and N_Cr timeout.
+ * Send caller-encoded FC bytes through preset_can_runtime_write_with_brs on
+ * physical_id with matching CAN/FD and BRS flags. The first three bytes are
+ * 0x30|flow_status (0..2), block_size and the ISO-TP wire STmin code.
+ * Other writes to diagnostic-reserved IDs remain rejected.
+ */
+PRESET_RS_API int32_t preset_can_request_start(PresetCanRuntime *, const PresetCanDiagnosticConfig *,
+    const PresetRequestTimeouts *, const uint8_t *, size_t, PresetDiagnosticRequest **);
+/* LIN payload is SID followed by service data. The client uses 0x3C/0x3D,
+ * handles NRC 0x78, and records the actual response NAD. Functional 0x7E and
+ * broadcast 0x7F require the network to have one responder. Cancel with
+ * preset_request_cancel. A suppressed positive response completes empty when
+ * no negative response arrives before the timeout. */
+PRESET_RS_API int32_t preset_lin_request_start(PresetLinUdsClient *, const PresetRequestTimeouts *,
+    const uint8_t *, size_t, PresetDiagnosticRequest **);
+/* Query success is independent of transaction outcome (including UDS negatives). */
+PRESET_RS_API int32_t preset_request_get_info(PresetDiagnosticRequest *, PresetDiagnosticRequestInfo *);
+PRESET_RS_API int32_t preset_request_cancel(PresetDiagnosticRequest *);
+/* wait_timeout_ms=0 polls; -13 means only this wait expired. */
+PRESET_RS_API int32_t preset_request_wait(PresetDiagnosticRequest *, uint32_t wait_timeout_ms);
+/* Non-consuming, repeatable reads. Response before terminal state returns -14.
+ * NULL/0 queries required length. -2 reports insufficient capacity. UTF-8 error
+ * text has no terminating NUL; out_len is its exact byte length.
+ */
+PRESET_RS_API int32_t preset_request_copy_response(PresetDiagnosticRequest *, uint8_t *, size_t, size_t *);
+PRESET_RS_API int32_t preset_request_copy_error(PresetDiagnosticRequest *, uint8_t *, size_t, size_t *);
+PRESET_RS_API int32_t preset_request_close(PresetDiagnosticRequest **);
+/* stop only registers the request. wait_stopped is bounded; it never frees live
+ * resources on timeout. close requires STOPPED/FAULTED and no child handles
+ * (requests, observers and periodic groups).
+ */
+PRESET_RS_API int32_t preset_can_runtime_stop(PresetCanRuntime *);
+PRESET_RS_API int32_t preset_can_runtime_wait_stopped(PresetCanRuntime *, uint32_t wait_timeout_ms);
+PRESET_RS_API int32_t preset_can_runtime_close(PresetCanRuntime **);
+/* Recovery defaults to 100 ms, applies to subsequent failed/cancelled requests,
+ * and is restricted to 0..60000 ms. Close also waits for recovery via BUSY.
+ */
+PRESET_RS_API int32_t preset_lin_uds_set_recovery_interval(PresetLinUdsClient *, uint32_t recovery_ms);
+PRESET_RS_API int32_t preset_lin_uds_wait_idle(PresetLinUdsClient *, uint32_t wait_timeout_ms);
 
 #undef PRESET_RS_API
 
