@@ -1,8 +1,10 @@
-package main
+//go:build windows && amd64
+
+package preset
 
 import (
 	"fmt"
-	"syscall"
+	"runtime"
 	"unsafe"
 )
 
@@ -17,12 +19,12 @@ const (
 	PresetErrBufferTooSmall     int32 = -2
 	PresetErrNotInit            int32 = -3
 	PresetErrTimeout            int32 = -4
-	PresetErrUdsNegative        int32 = -5
+	PresetErrUDSNegative        int32 = -5
 	PresetErrTransport          int32 = -6
 	PresetErrUnsupported        int32 = -7
 	PresetErrInvalidArg         int32 = -8
 	PresetErrBusy               int32 = -9
-	PresetErrIsotp              int32 = -10
+	PresetErrISOTP              int32 = -10
 	PresetErrPanic              int32 = -11
 	PresetErrCancelled          int32 = -12
 	PresetErrWaitTimeout        int32 = -13
@@ -31,13 +33,13 @@ const (
 )
 
 const (
-	PresetCanDirectionTx            byte   = 0
-	PresetCanDirectionRx            byte   = 1
-	PresetCanBackendNone            byte   = 0
-	PresetCanBackendToomoss         byte   = 1
-	PresetCanBackendTSMaster        byte   = 2
-	PresetCanBackendPCAN            byte   = 3
-	PresetCanBackendVector          byte   = 4
+	PresetCANDirectionTX            byte   = 0
+	PresetCANDirectionRX            byte   = 1
+	PresetCANBackendNone            byte   = 0
+	PresetCANBackendToomoss         byte   = 1
+	PresetCANBackendTSMaster        byte   = 2
+	PresetCANBackendPCAN            byte   = 3
+	PresetCANBackendVector          byte   = 4
 	PresetAddressPhysical           byte   = 0
 	PresetAddressFunctional         byte   = 1
 	PresetOutcomeNone               uint32 = 0
@@ -64,36 +66,6 @@ const (
 	PresetRequestFailed             uint32 = 9
 )
 
-var (
-	preset_device_get_backend, _ = syscall.GetProcAddress(lib, "preset_device_get_backend")
-
-	preset_can_write_with_brs, _ = syscall.GetProcAddress(lib, "preset_can_write_with_brs")
-	preset_can_write_ex, _       = syscall.GetProcAddress(lib, "preset_can_write_ex")
-	preset_can_try_read_ex, _    = syscall.GetProcAddress(lib, "preset_can_try_read_ex")
-
-	preset_can_runtime_new, _            = syscall.GetProcAddress(lib, "preset_can_runtime_new")
-	preset_can_runtime_get_info, _       = syscall.GetProcAddress(lib, "preset_can_runtime_get_info")
-	preset_can_runtime_copy_error, _     = syscall.GetProcAddress(lib, "preset_can_runtime_copy_error")
-	preset_can_runtime_write_with_brs, _ = syscall.GetProcAddress(lib, "preset_can_runtime_write_with_brs")
-	preset_can_runtime_write_ex, _       = syscall.GetProcAddress(lib, "preset_can_runtime_write_ex")
-	preset_can_runtime_get_bus_load, _   = syscall.GetProcAddress(lib, "preset_can_runtime_get_bus_load")
-	preset_can_runtime_stop, _           = syscall.GetProcAddress(lib, "preset_can_runtime_stop")
-	preset_can_runtime_wait_stopped, _   = syscall.GetProcAddress(lib, "preset_can_runtime_wait_stopped")
-	preset_can_runtime_close, _          = syscall.GetProcAddress(lib, "preset_can_runtime_close")
-	preset_can_observer_new, _           = syscall.GetProcAddress(lib, "preset_can_observer_new")
-	preset_can_observer_try_read, _      = syscall.GetProcAddress(lib, "preset_can_observer_try_read")
-	preset_can_observer_get_stats, _     = syscall.GetProcAddress(lib, "preset_can_observer_get_stats")
-	preset_can_observer_close, _         = syscall.GetProcAddress(lib, "preset_can_observer_close")
-	preset_can_request_start, _          = syscall.GetProcAddress(lib, "preset_can_request_start")
-	preset_request_get_info, _           = syscall.GetProcAddress(lib, "preset_request_get_info")
-	preset_request_cancel, _             = syscall.GetProcAddress(lib, "preset_request_cancel")
-	preset_request_wait, _               = syscall.GetProcAddress(lib, "preset_request_wait")
-	preset_request_copy_response, _      = syscall.GetProcAddress(lib, "preset_request_copy_response")
-	preset_request_copy_error, _         = syscall.GetProcAddress(lib, "preset_request_copy_error")
-	preset_request_close, _              = syscall.GetProcAddress(lib, "preset_request_close")
-	preset_last_error, _                 = syscall.GetProcAddress(lib, "preset_last_error")
-)
-
 // PresetError is a negative preset_rs status code plus the thread-local
 // error text reported by preset_last_error (when available).
 type PresetError struct {
@@ -110,26 +82,32 @@ func (e *PresetError) Error() string {
 	return text
 }
 
+// Is matches PresetError values by native status code.
+func (e *PresetError) Is(target error) bool {
+	other, ok := target.(*PresetError)
+	return ok && e.Code == other.Code
+}
+
 func presetStatus(fn string, rc uintptr) error {
 	code := int32(rc)
 	if code >= 0 {
 		return nil
 	}
-	return &PresetError{Code: code, Func: fn, Message: LastError()}
+	return &PresetError{Code: code, Func: fn, Message: lastError()}
 }
 
-// LastError returns the latest synchronous error text on the calling thread.
-func LastError() string {
-	if preset_last_error == 0 {
+func lastError() string {
+	fn, err := proc("preset_last_error")
+	if err != nil {
 		return ""
 	}
 	var n uintptr
-	rc := int32(syscallR1(preset_last_error, 0, 0, uintptr(unsafe.Pointer(&n))))
+	rc := int32(syscallR1(fn, 0, 0, uintptr(unsafe.Pointer(&n))))
 	if rc < 0 && rc != PresetErrBufferTooSmall || n == 0 {
 		return ""
 	}
 	data := make([]byte, n)
-	if int32(syscallR1(preset_last_error, bytePtr(data), n, uintptr(unsafe.Pointer(&n)))) < 0 {
+	if int32(syscallR1(fn, bytePtr(data), n, uintptr(unsafe.Pointer(&n)))) < 0 {
 		return ""
 	}
 	return string(data[:n])
@@ -137,11 +115,18 @@ func LastError() string {
 
 // callCopy implements the two-call NULL/0 length query then copy pattern used
 // by preset_last_error and preset_request_copy_*.
-func callCopy(fn uintptr, handle uintptr) ([]byte, int32, error) {
+func callCopy(name string, handle uintptr) ([]byte, int32, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	fn, err := proc(name)
+	if err != nil {
+		return nil, 0, err
+	}
 	var n uintptr
 	rc := int32(syscallR1(fn, handle, 0, 0, uintptr(unsafe.Pointer(&n))))
 	if rc < 0 && rc != PresetErrBufferTooSmall {
-		return nil, rc, &PresetError{Code: rc, Func: "preset_copy"}
+		return nil, rc, &PresetError{Code: rc, Func: name, Message: lastError()}
 	}
 	if n == 0 {
 		return nil, rc, nil
@@ -149,9 +134,27 @@ func callCopy(fn uintptr, handle uintptr) ([]byte, int32, error) {
 	buf := make([]byte, n)
 	rc = int32(syscallR1(fn, handle, uintptr(unsafe.Pointer(&buf[0])), n, uintptr(unsafe.Pointer(&n))))
 	if rc < 0 {
-		return nil, rc, &PresetError{Code: rc, Func: "preset_copy"}
+		return nil, rc, &PresetError{Code: rc, Func: name, Message: lastError()}
 	}
 	return buf[:n], rc, nil
+}
+
+func nativeWait(name string, args ...uintptr) (bool, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	result, err := nativeResult(name, args...)
+	if err != nil {
+		return false, err
+	}
+	code := int32(result)
+	if code == PresetErrWaitTimeout {
+		return false, nil
+	}
+	if code < 0 {
+		return false, &PresetError{Code: code, Func: name, Message: lastError()}
+	}
+	return true, nil
 }
 
 func bytePtr(data []byte) uintptr {
@@ -161,15 +164,9 @@ func bytePtr(data []byte) uintptr {
 	return uintptr(unsafe.Pointer(&data[0]))
 }
 
-// syscallR1 exposes only the first return register of a native call.
-func syscallR1(fn uintptr, args ...uintptr) uintptr {
-	r1, _, _ := syscall.SyscallN(fn, args...)
-	return r1
-}
-
 // ---- Structures ----
 
-type CanFdTiming struct {
+type CANFDTiming struct {
 	NominalBrp   uint32
 	NominalTseg1 uint32
 	NominalTseg2 uint32
@@ -180,37 +177,37 @@ type CanFdTiming struct {
 	DataSjw      uint32
 }
 
-type CanChannelConfig struct {
-	IsFd                byte
-	Brs                 byte
+type CANChannelConfig struct {
+	IsFD                byte
+	BRS                 byte
 	NominalBitrate      uint32
 	DataBitrate         uint32
 	RxBufferSize        uint32
 	PollBatchSize       uint32
-	MinTxIntervalUs     uint32
-	MinRxPollIntervalUs uint32
+	MinTXIntervalUS     uint32
+	MinRXPollIntervalUS uint32
 }
 
-type ToomossCanCfg struct {
+type ToomossCANConfig struct {
 	Channel byte
-	Can     CanChannelConfig
+	CAN     CANChannelConfig
 }
 
-type CanFrame struct {
+type CANFrame struct {
 	ID          uint32
 	DataLen     byte
 	Direction   byte
-	IsFd        byte
-	Brs         byte
+	IsFD        byte
+	BRS         byte
 	IsExtended  byte
 	IsRemote    byte
-	Esi         byte
+	ESI         byte
 	Reserved    byte
-	TimestampUs uint64
+	TimestampUS uint64
 	Data        [64]byte
 }
 
-func (f CanFrame) Payload() []byte {
+func (f CANFrame) Payload() []byte {
 	if f.IsRemote != 0 {
 		return nil
 	}
@@ -221,12 +218,49 @@ func (f CanFrame) Payload() []byte {
 	return f.Data[:n]
 }
 
-func (f CanFrame) String() string {
-	return fmt.Sprintf("CanFrame(id=0x%X, len=%d, fd=%d, data=% X)",
-		f.ID, f.DataLen, f.IsFd, f.Payload())
+func (f CANFrame) String() string {
+	return fmt.Sprintf("CANFrame(id=0x%X, len=%d, fd=%d, data=% X)",
+		f.ID, f.DataLen, f.IsFD, f.Payload())
 }
 
-type RxStats struct {
+// Validate checks the transmit-side constraints documented by preset_rs.h.
+func (f CANFrame) Validate() error {
+	if f.Direction != PresetCANDirectionTX {
+		return fmt.Errorf("CAN frame direction must be TX")
+	}
+	if f.IsFD > 1 || f.BRS > 1 || f.IsExtended > 1 || f.IsRemote > 1 || f.ESI > 1 {
+		return fmt.Errorf("CAN frame flags must be 0 or 1")
+	}
+	if f.Reserved != 0 || f.ESI != 0 {
+		return fmt.Errorf("CAN frame ESI and reserved fields must be zero when transmitting")
+	}
+	maxID := uint32(0x7FF)
+	if f.IsExtended != 0 {
+		maxID = 0x1FFFFFFF
+	}
+	if f.ID > maxID {
+		return fmt.Errorf("CAN ID 0x%X exceeds the selected frame format", f.ID)
+	}
+	if f.IsRemote != 0 {
+		if f.IsFD != 0 {
+			return fmt.Errorf("CAN-FD remote frames are invalid")
+		}
+		if f.DataLen > 8 {
+			return fmt.Errorf("classic CAN remote DLC must be at most 8")
+		}
+		return nil
+	}
+	maxLen := byte(8)
+	if f.IsFD != 0 {
+		maxLen = 64
+	}
+	if f.DataLen > maxLen {
+		return fmt.Errorf("CAN payload length %d exceeds maximum %d", f.DataLen, maxLen)
+	}
+	return nil
+}
+
+type RXStats struct {
 	Received uint64
 	Dropped  uint64
 	Queued   uint32
@@ -241,15 +275,15 @@ type BusLoad struct {
 	FrameCount     uint64
 }
 
-type CanRuntimeOptions struct {
+type CANRuntimeOptions struct {
 	CommandCapacity uint32
 	RecoveryMs      uint32
 }
 
-type CanObserverOptions struct {
+type CANObserverOptions struct {
 	Capacity uint32
-	Rx       byte
-	Tx       byte
+	RX       byte
+	TX       byte
 }
 
 type RequestTimeouts struct {
@@ -258,14 +292,14 @@ type RequestTimeouts struct {
 	TotalTimeoutMs  uint32
 }
 
-type CanDiagnosticConfig struct {
+type CANDiagnosticConfig struct {
 	PhysicalID        uint32
 	ResponseID        uint32
 	FunctionalID      uint32
 	NBsMs             uint32
 	NCrMs             uint32
 	StMinMs           uint32
-	MaxPduLen         uint32
+	MaxPDULen         uint32
 	TxStMinOverrideMs uint32
 
 	Addressing             byte
@@ -280,7 +314,7 @@ type CanDiagnosticConfig struct {
 type DiagnosticRequestInfo struct {
 	TransactionID   uint64
 	RuntimeEpoch    uint64
-	ElapsedUs       uint64
+	ElapsedUS       uint64
 	ResponseLen     uint64
 	State           uint32
 	Outcome         uint32
@@ -288,17 +322,17 @@ type DiagnosticRequestInfo struct {
 	TimeoutKind     uint32
 	PendingCount    uint32
 	ResponseAddress uint32
-	LastNrc         byte
+	LastNRC         byte
 }
 
-type CanCaptureEvent struct {
+type CANCaptureEvent struct {
 	Sequence      uint64
 	RuntimeEpoch  uint64
 	TransactionID uint64
-	Frame         CanFrame
+	Frame         CANFrame
 }
 
-type CanRuntimeInfo struct {
+type CANRuntimeInfo struct {
 	RuntimeEpoch        uint64
 	TransactionID       uint64
 	RecoveryRemainingUs uint64
@@ -313,31 +347,31 @@ type CanRuntimeInfo struct {
 
 // Structs larger than 8 bytes are returned through a hidden first argument on
 // the Microsoft x64 calling convention, so pass the destination pointer.
-func ToomossCanDefaultCfg() (ToomossCanCfg, error) {
-	return defaultStruct[ToomossCanCfg]("preset_toomoss_default_config")
+func DefaultToomossCANConfig() (ToomossCANConfig, error) {
+	return defaultStruct[ToomossCANConfig]("preset_toomoss_default_config")
 }
 
-func ToomossCanDefaultFdTiming() (CanFdTiming, error) {
-	return defaultStruct[CanFdTiming]("preset_toomoss_default_fd_timing")
+func DefaultToomossCANFDTiming() (CANFDTiming, error) {
+	return defaultStruct[CANFDTiming]("preset_toomoss_default_fd_timing")
 }
 
-func DefaultRuntimeOptions() CanRuntimeOptions {
-	return CanRuntimeOptions{CommandCapacity: 256, RecoveryMs: 100}
+func DefaultRuntimeOptions() CANRuntimeOptions {
+	return CANRuntimeOptions{CommandCapacity: 256, RecoveryMs: 100}
 }
 
 func DefaultRequestTimeouts() RequestTimeouts {
 	return RequestTimeouts{P2TimeoutMs: 1000, P2StarTimeoutMs: 5000, TotalTimeoutMs: 30000}
 }
 
-func DefaultCanDiagnosticConfig(physicalID, responseID, functionalID uint32) CanDiagnosticConfig {
-	return CanDiagnosticConfig{
+func DefaultCANDiagnosticConfig(physicalID, responseID, functionalID uint32) CANDiagnosticConfig {
+	return CANDiagnosticConfig{
 		PhysicalID:     physicalID,
 		ResponseID:     responseID,
 		FunctionalID:   functionalID,
 		NBsMs:          1000,
 		NCrMs:          1000,
 		StMinMs:        0,
-		MaxPduLen:      4095,
+		MaxPDULen:      4095,
 		Addressing:     PresetAddressPhysical,
 		PaddingEnabled: 1,
 		PaddingByte:    0xCC,
@@ -348,79 +382,101 @@ func DefaultCanDiagnosticConfig(physicalID, responseID, functionalID uint32) Can
 
 // ---- Device CAN setup ----
 
-// CanInit initializes each supplied logical CAN channel with the library's
+// InitCAN initializes each supplied logical CAN channel with the library's
 // default Toomoss configuration.
-func (t *Toomoss) CanInit(channels ...byte) error {
+func (t *Toomoss) InitCAN(channels ...byte) error {
 	for _, v := range channels {
-		cfg, err := ToomossCanDefaultCfg()
+		cfg, err := DefaultToomossCANConfig()
 		if err != nil {
 			return err
 		}
 		cfg.Channel = v
-		if err := t.CanInitCfg(&cfg, nil); err != nil {
+		if err := t.InitCANWithConfig(&cfg, nil); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// CanInitCfg initializes one CAN channel. A nil timing pointer lets the
+// InitCANWithConfig initializes one CAN channel. A nil timing pointer lets the
 // library derive controller timing from the configured bitrates.
-func (t *Toomoss) CanInitCfg(cfg *ToomossCanCfg, timing *CanFdTiming) error {
+func (t *Toomoss) InitCANWithConfig(cfg *ToomossCANConfig, timing *CANFDTiming) error {
 	if cfg == nil {
 		return fmt.Errorf("Toomoss config is nil")
 	}
-	return nativeStatus("preset_toomoss_can_init", t.device, uintptr(unsafe.Pointer(cfg)), uintptr(unsafe.Pointer(timing)))
+	return t.handle.use(func(handle uintptr) error {
+		return nativeStatus("preset_toomoss_can_init", handle, uintptr(unsafe.Pointer(cfg)), uintptr(unsafe.Pointer(timing)))
+	})
 }
 
 // Backend returns PRESET_CAN_BACKEND_* for this device.
 func (t *Device) Backend() (byte, error) {
-	var backend byte
-	rc := syscallR1(preset_device_get_backend, t.device, uintptr(unsafe.Pointer(&backend)))
-	if err := presetStatus("preset_device_get_backend", rc); err != nil {
-		return 0, err
-	}
-	return backend, nil
+	return useHandle(&t.handle, func(handle uintptr) (byte, error) {
+		var backend byte
+		if err := nativeStatus("preset_device_get_backend", handle, uintptr(unsafe.Pointer(&backend))); err != nil {
+			return 0, err
+		}
+		return backend, nil
+	})
 }
 
 // ---- Raw CAN I/O ----
 
-// CanWrite sends a raw CAN/CAN-FD frame. Standard 11-bit IDs only; use
-// CanWriteFrame for extended or remote frames.
-func (t *Device) CanWrite(channel byte, id uint32, data []byte, isFD, brs bool) error {
-	rc := syscallR1(
-		preset_can_write_with_brs,
-		t.device,
-		uintptr(channel),
-		uintptr(id),
-		uintptr(boolByte(isFD)),
-		uintptr(boolByte(brs)),
-		bytePtr(data),
-		uintptr(len(data)))
-	return presetStatus("preset_can_write_with_brs", rc)
-}
-
-// CanWriteFrame sends a structured frame (extended IDs, classic remote frames).
-func (t *Device) CanWriteFrame(channel byte, frame *CanFrame) error {
-	rc := syscallR1(preset_can_write_ex, t.device, uintptr(channel), uintptr(unsafe.Pointer(frame)))
-	return presetStatus("preset_can_write_ex", rc)
-}
-
-// CanTryRead drains up to maxFrames frames from the channel queue.
-func (t *Device) CanTryRead(channel byte, maxFrames int) ([]CanFrame, error) {
-	if maxFrames <= 0 {
-		return nil, nil
+// WriteCAN sends a raw CAN/CAN-FD frame. Standard 11-bit IDs only; use
+// WriteCANFrame for extended or remote frames.
+func (t *Device) WriteCAN(channel byte, id uint32, data []byte, isFD, brs bool) error {
+	if id > 0x7FF {
+		return fmt.Errorf("standard CAN ID must be at most 0x7FF")
 	}
-	frames := make([]CanFrame, maxFrames)
+	if err := validateCanPayload(data, isFD); err != nil {
+		return err
+	}
+	return t.handle.use(func(handle uintptr) error {
+		return nativeStatus(
+			"preset_can_write_with_brs",
+			handle,
+			uintptr(channel),
+			uintptr(id),
+			uintptr(boolByte(isFD)),
+			uintptr(boolByte(brs)),
+			bytePtr(data),
+			uintptr(len(data)))
+	})
+}
+
+// WriteCANFrame sends a structured frame (extended IDs, classic remote frames).
+func (t *Device) WriteCANFrame(channel byte, frame *CANFrame) error {
+	if frame == nil {
+		return fmt.Errorf("CAN frame is nil")
+	}
+	if err := frame.Validate(); err != nil {
+		return err
+	}
+	return t.handle.use(func(handle uintptr) error {
+		return nativeStatus("preset_can_write_ex", handle, uintptr(channel), uintptr(unsafe.Pointer(frame)))
+	})
+}
+
+// TryReadCAN drains up to maxFrames frames from the channel queue.
+func (t *Device) TryReadCAN(channel byte, maxFrames int) ([]CANFrame, error) {
+	if maxFrames < 1 || maxFrames > 65536 {
+		return nil, fmt.Errorf("CAN read capacity must be in range 1-65536")
+	}
+	frames := make([]CANFrame, maxFrames)
 	n := uintptr(maxFrames)
-	rc := syscallR1(
-		preset_can_try_read_ex,
-		t.device,
-		uintptr(channel),
-		uintptr(unsafe.Pointer(&frames[0])),
-		uintptr(unsafe.Pointer(&n)))
-	if err := presetStatus("preset_can_try_read_ex", rc); err != nil {
+	err := t.handle.use(func(handle uintptr) error {
+		return nativeStatus(
+			"preset_can_try_read_ex",
+			handle,
+			uintptr(channel),
+			uintptr(unsafe.Pointer(&frames[0])),
+			uintptr(unsafe.Pointer(&n)))
+	})
+	if err != nil {
 		return nil, err
+	}
+	if n > uintptr(len(frames)) {
+		return nil, fmt.Errorf("preset_can_try_read_ex returned invalid length %d", n)
 	}
 	return frames[:n], nil
 }
@@ -432,123 +488,167 @@ func boolByte(v bool) byte {
 	return 0
 }
 
-// MakeCanFrame fills a TX frame structure, mirroring the Python helper.
-func MakeCanFrame(id uint32, data []byte, isFD, brs, isExtended, isRemote bool, dlc ...byte) CanFrame {
-	frame := CanFrame{
+func validateCanPayload(data []byte, isFD bool) error {
+	maxLen := 8
+	if isFD {
+		maxLen = 64
+	}
+	if len(data) > maxLen {
+		return fmt.Errorf("CAN payload length %d exceeds maximum %d", len(data), maxLen)
+	}
+	return nil
+}
+
+// NewCANFrame creates and validates a classic CAN or CAN-FD data frame.
+func NewCANFrame(id uint32, data []byte, isFD, brs, isExtended bool) (CANFrame, error) {
+	if err := validateCanPayload(data, isFD); err != nil {
+		return CANFrame{}, err
+	}
+	frame := CANFrame{
 		ID:         id,
-		Direction:  PresetCanDirectionTx,
-		IsFd:       boolByte(isFD),
-		Brs:        boolByte(brs),
+		Direction:  PresetCANDirectionTX,
+		IsFD:       boolByte(isFD),
+		BRS:        boolByte(brs),
 		IsExtended: boolByte(isExtended),
-		IsRemote:   boolByte(isRemote),
+		DataLen:    byte(len(data)),
 	}
-	n := copy(frame.Data[:], data)
-	frame.DataLen = byte(n)
-	if len(dlc) > 0 {
-		frame.DataLen = dlc[0]
+	copy(frame.Data[:], data)
+	if err := frame.Validate(); err != nil {
+		return CANFrame{}, err
 	}
-	return frame
+	return frame, nil
+}
+
+// NewCANRemoteFrame creates and validates a classic CAN remote frame.
+func NewCANRemoteFrame(id uint32, dlc byte, isExtended bool) (CANFrame, error) {
+	frame := CANFrame{
+		ID:         id,
+		DataLen:    dlc,
+		Direction:  PresetCANDirectionTX,
+		IsExtended: boolByte(isExtended),
+		IsRemote:   1,
+	}
+	if err := frame.Validate(); err != nil {
+		return CANFrame{}, err
+	}
+	return frame, nil
 }
 
 // ---- CAN runtime ----
 
-type CanRuntime struct {
-	handle uintptr
-}
+type CANRuntime struct{ handle nativeHandle }
 
-// CanRuntimeNew creates a diagnostic runtime that borrows an initialized
+// NewCANRuntime creates a diagnostic runtime that borrows an initialized
 // channel. Pass no options to use 256 commands / 100 ms recovery.
-func (t *Device) CanRuntimeNew(channel byte, options ...CanRuntimeOptions) (*CanRuntime, error) {
+func (t *Device) NewCANRuntime(channel byte, options ...CANRuntimeOptions) (*CANRuntime, error) {
+	if len(options) > 1 {
+		return nil, fmt.Errorf("at most one CAN runtime options value is allowed")
+	}
 	opts := DefaultRuntimeOptions()
 	if len(options) > 0 {
 		opts = options[0]
 	}
-	var handle uintptr
-	rc := syscallR1(
-		preset_can_runtime_new,
-		t.device,
-		uintptr(channel),
-		uintptr(unsafe.Pointer(&opts)),
-		uintptr(unsafe.Pointer(&handle)))
-	if err := presetStatus("preset_can_runtime_new", rc); err != nil {
-		return nil, err
-	}
-	return &CanRuntime{handle: handle}, nil
+	return useHandle(&t.handle, func(device uintptr) (*CANRuntime, error) {
+		var handle uintptr
+		if err := nativeStatus(
+			"preset_can_runtime_new",
+			device,
+			uintptr(channel),
+			uintptr(unsafe.Pointer(&opts)),
+			uintptr(unsafe.Pointer(&handle))); err != nil {
+			return nil, err
+		}
+		return &CANRuntime{handle: newNativeHandle(handle)}, nil
+	})
 }
 
-func (r *CanRuntime) GetInfo() (CanRuntimeInfo, error) {
-	var info CanRuntimeInfo
-	rc := syscallR1(preset_can_runtime_get_info, r.handle, uintptr(unsafe.Pointer(&info)))
-	if err := presetStatus("preset_can_runtime_get_info", rc); err != nil {
-		return CanRuntimeInfo{}, err
-	}
-	return info, nil
+func (r *CANRuntime) GetInfo() (CANRuntimeInfo, error) {
+	return useHandle(&r.handle, func(handle uintptr) (CANRuntimeInfo, error) {
+		var info CANRuntimeInfo
+		if err := nativeStatus("preset_can_runtime_get_info", handle, uintptr(unsafe.Pointer(&info))); err != nil {
+			return CANRuntimeInfo{}, err
+		}
+		return info, nil
+	})
 }
 
 // CopyError returns the runtime's last CAN/driver error text.
-func (r *CanRuntime) CopyError() (string, error) {
-	data, _, err := callCopy(preset_can_runtime_copy_error, r.handle)
-	if err != nil {
-		return "", err
+func (r *CANRuntime) CopyError() (string, error) {
+	return useHandle(&r.handle, func(handle uintptr) (string, error) {
+		data, _, err := callCopy("preset_can_runtime_copy_error", handle)
+		return string(data), err
+	})
+}
+
+func (r *CANRuntime) Write(id uint32, data []byte, isFD, brs bool) error {
+	if id > 0x7FF {
+		return fmt.Errorf("standard CAN ID must be at most 0x7FF")
 	}
-	return string(data), nil
-}
-
-func (r *CanRuntime) Write(id uint32, data []byte, isFD, brs bool) error {
-	rc := syscallR1(
-		preset_can_runtime_write_with_brs,
-		r.handle,
-		uintptr(id),
-		uintptr(boolByte(isFD)),
-		uintptr(boolByte(brs)),
-		bytePtr(data),
-		uintptr(len(data)))
-	return presetStatus("preset_can_runtime_write_with_brs", rc)
-}
-
-func (r *CanRuntime) WriteFrame(frame *CanFrame) error {
-	rc := syscallR1(preset_can_runtime_write_ex, r.handle, uintptr(unsafe.Pointer(frame)))
-	return presetStatus("preset_can_runtime_write_ex", rc)
-}
-
-func (r *CanRuntime) GetBusLoad() (BusLoad, error) {
-	var load BusLoad
-	rc := syscallR1(preset_can_runtime_get_bus_load, r.handle, uintptr(unsafe.Pointer(&load)))
-	if err := presetStatus("preset_can_runtime_get_bus_load", rc); err != nil {
-		return BusLoad{}, err
+	if err := validateCanPayload(data, isFD); err != nil {
+		return err
 	}
-	return load, nil
+	return r.handle.use(func(handle uintptr) error {
+		return nativeStatus(
+			"preset_can_runtime_write_with_brs",
+			handle,
+			uintptr(id),
+			uintptr(boolByte(isFD)),
+			uintptr(boolByte(brs)),
+			bytePtr(data),
+			uintptr(len(data)))
+	})
 }
 
-func (r *CanRuntime) Stop() error {
-	return presetStatus("preset_can_runtime_stop", syscallR1(preset_can_runtime_stop, r.handle))
+func (r *CANRuntime) WriteFrame(frame *CANFrame) error {
+	if frame == nil {
+		return fmt.Errorf("CAN frame is nil")
+	}
+	if err := frame.Validate(); err != nil {
+		return err
+	}
+	return r.handle.use(func(handle uintptr) error {
+		return nativeStatus("preset_can_runtime_write_ex", handle, uintptr(unsafe.Pointer(frame)))
+	})
+}
+
+func (r *CANRuntime) GetBusLoad() (BusLoad, error) {
+	return useHandle(&r.handle, func(handle uintptr) (BusLoad, error) {
+		var load BusLoad
+		if err := nativeStatus("preset_can_runtime_get_bus_load", handle, uintptr(unsafe.Pointer(&load))); err != nil {
+			return BusLoad{}, err
+		}
+		return load, nil
+	})
+}
+
+func (r *CANRuntime) Stop() error {
+	return r.handle.use(func(handle uintptr) error {
+		return nativeStatus("preset_can_runtime_stop", handle)
+	})
 }
 
 // WaitStopped returns true when stopped, false when only the wait expired
 // (PRESET_ERR_WAIT_TIMEOUT).
-func (r *CanRuntime) WaitStopped(timeoutMs uint32) (bool, error) {
-	rc := int32(syscallR1(preset_can_runtime_wait_stopped, r.handle, uintptr(timeoutMs)))
-	if rc == PresetErrWaitTimeout {
-		return false, nil
-	}
-	if rc < 0 {
-		return false, &PresetError{Code: rc, Func: "preset_can_runtime_wait_stopped", Message: LastError()}
-	}
-	return true, nil
+func (r *CANRuntime) WaitStopped(timeoutMs uint32) (bool, error) {
+	return useHandle(&r.handle, func(handle uintptr) (bool, error) {
+		return nativeWait("preset_can_runtime_wait_stopped", handle, uintptr(timeoutMs))
+	})
 }
 
-func (r *CanRuntime) Close() error {
-	if r == nil || r.handle == 0 {
+func (r *CANRuntime) Close() error {
+	if r == nil {
 		return nil
 	}
-	rc := syscallR1(preset_can_runtime_close, uintptr(unsafe.Pointer(&r.handle)))
-	return presetStatus("preset_can_runtime_close", rc)
+	return r.handle.close("preset_can_runtime_close")
 }
 
 // Shutdown performs stop + wait_stopped + close.
-func (r *CanRuntime) Shutdown(waitTimeoutMs ...uint32) error {
-	if r == nil || r.handle == 0 {
+func (r *CANRuntime) Shutdown(waitTimeoutMs ...uint32) error {
+	if r == nil {
 		return nil
+	}
+	if len(waitTimeoutMs) > 1 {
+		return fmt.Errorf("at most one shutdown timeout is allowed")
 	}
 	waitMs := uint32(2000)
 	if len(waitTimeoutMs) > 0 {
@@ -569,148 +669,152 @@ func (r *CanRuntime) Shutdown(waitTimeoutMs ...uint32) error {
 
 // ---- Observer ----
 
-type CanObserver struct {
-	handle uintptr
-}
+type CANObserver struct{ handle nativeHandle }
 
-func (r *CanRuntime) ObserverNew(options ...CanObserverOptions) (*CanObserver, error) {
-	opts := CanObserverOptions{Capacity: 4096, Rx: 1, Tx: 1}
+func (r *CANRuntime) NewObserver(options ...CANObserverOptions) (*CANObserver, error) {
+	if len(options) > 1 {
+		return nil, fmt.Errorf("at most one CAN observer options value is allowed")
+	}
+	opts := CANObserverOptions{Capacity: 4096, RX: 1, TX: 1}
 	if len(options) > 0 {
 		opts = options[0]
 	}
-	var handle uintptr
-	rc := syscallR1(
-		preset_can_observer_new,
-		r.handle,
-		uintptr(unsafe.Pointer(&opts)),
-		uintptr(unsafe.Pointer(&handle)))
-	if err := presetStatus("preset_can_observer_new", rc); err != nil {
-		return nil, err
-	}
-	return &CanObserver{handle: handle}, nil
+	return useHandle(&r.handle, func(runtime uintptr) (*CANObserver, error) {
+		var handle uintptr
+		if err := nativeStatus(
+			"preset_can_observer_new",
+			runtime,
+			uintptr(unsafe.Pointer(&opts)),
+			uintptr(unsafe.Pointer(&handle))); err != nil {
+			return nil, err
+		}
+		return &CANObserver{handle: newNativeHandle(handle)}, nil
+	})
 }
 
-func (o *CanObserver) TryRead(maxEvents int) ([]CanCaptureEvent, error) {
-	if maxEvents <= 0 {
-		return nil, nil
+func (o *CANObserver) TryRead(maxEvents int) ([]CANCaptureEvent, error) {
+	if maxEvents < 1 || maxEvents > 4096 {
+		return nil, fmt.Errorf("CAN observer read capacity must be in range 1-4096")
 	}
-	events := make([]CanCaptureEvent, maxEvents)
+	events := make([]CANCaptureEvent, maxEvents)
 	var n uintptr
-	rc := syscallR1(
-		preset_can_observer_try_read,
-		o.handle,
-		uintptr(unsafe.Pointer(&events[0])),
-		uintptr(maxEvents),
-		uintptr(unsafe.Pointer(&n)))
-	if err := presetStatus("preset_can_observer_try_read", rc); err != nil {
+	err := o.handle.use(func(handle uintptr) error {
+		return nativeStatus(
+			"preset_can_observer_try_read",
+			handle,
+			uintptr(unsafe.Pointer(&events[0])),
+			uintptr(maxEvents),
+			uintptr(unsafe.Pointer(&n)))
+	})
+	if err != nil {
 		return nil, err
+	}
+	if n > uintptr(len(events)) {
+		return nil, fmt.Errorf("preset_can_observer_try_read returned invalid length %d", n)
 	}
 	return events[:n], nil
 }
 
-func (o *CanObserver) GetStats() (RxStats, error) {
-	var stats RxStats
-	rc := syscallR1(preset_can_observer_get_stats, o.handle, uintptr(unsafe.Pointer(&stats)))
-	if err := presetStatus("preset_can_observer_get_stats", rc); err != nil {
-		return RxStats{}, err
-	}
-	return stats, nil
+func (o *CANObserver) GetStats() (RXStats, error) {
+	return useHandle(&o.handle, func(handle uintptr) (RXStats, error) {
+		var stats RXStats
+		if err := nativeStatus("preset_can_observer_get_stats", handle, uintptr(unsafe.Pointer(&stats))); err != nil {
+			return RXStats{}, err
+		}
+		return stats, nil
+	})
 }
 
-func (o *CanObserver) Close() error {
-	if o == nil || o.handle == 0 {
+func (o *CANObserver) Close() error {
+	if o == nil {
 		return nil
 	}
-	rc := syscallR1(preset_can_observer_close, uintptr(unsafe.Pointer(&o.handle)))
-	return presetStatus("preset_can_observer_close", rc)
+	return o.handle.close("preset_can_observer_close")
 }
 
 // ---- Diagnostic requests ----
 
-type DiagnosticRequest struct {
-	handle uintptr
-}
+type DiagnosticRequest struct{ handle nativeHandle }
 
 // StartRequest copies the PDU and configuration, then returns without waiting
 // for the ECU.
-func (r *CanRuntime) StartRequest(cfg *CanDiagnosticConfig, timeouts *RequestTimeouts, pdu []byte) (*DiagnosticRequest, error) {
-	var handle uintptr
-	rc := syscallR1(
-		preset_can_request_start,
-		r.handle,
-		uintptr(unsafe.Pointer(cfg)),
-		uintptr(unsafe.Pointer(timeouts)),
-		bytePtr(pdu),
-		uintptr(len(pdu)),
-		uintptr(unsafe.Pointer(&handle)))
-	if err := presetStatus("preset_can_request_start", rc); err != nil {
-		return nil, err
+func (r *CANRuntime) StartRequest(cfg *CANDiagnosticConfig, timeouts *RequestTimeouts, pdu []byte) (*DiagnosticRequest, error) {
+	if cfg == nil || timeouts == nil || len(pdu) == 0 {
+		return nil, fmt.Errorf("diagnostic config, timeouts, and PDU are required")
 	}
-	return &DiagnosticRequest{handle: handle}, nil
+	return useHandle(&r.handle, func(runtime uintptr) (*DiagnosticRequest, error) {
+		var handle uintptr
+		if err := nativeStatus(
+			"preset_can_request_start",
+			runtime,
+			uintptr(unsafe.Pointer(cfg)),
+			uintptr(unsafe.Pointer(timeouts)),
+			bytePtr(pdu),
+			uintptr(len(pdu)),
+			uintptr(unsafe.Pointer(&handle))); err != nil {
+			return nil, err
+		}
+		return &DiagnosticRequest{handle: newNativeHandle(handle)}, nil
+	})
 }
 
 func (q *DiagnosticRequest) GetInfo() (DiagnosticRequestInfo, error) {
-	var info DiagnosticRequestInfo
-	rc := syscallR1(preset_request_get_info, q.handle, uintptr(unsafe.Pointer(&info)))
-	if err := presetStatus("preset_request_get_info", rc); err != nil {
-		return DiagnosticRequestInfo{}, err
-	}
-	return info, nil
+	return useHandle(&q.handle, func(handle uintptr) (DiagnosticRequestInfo, error) {
+		var info DiagnosticRequestInfo
+		if err := nativeStatus("preset_request_get_info", handle, uintptr(unsafe.Pointer(&info))); err != nil {
+			return DiagnosticRequestInfo{}, err
+		}
+		return info, nil
+	})
 }
 
 func (q *DiagnosticRequest) Cancel() error {
-	return presetStatus("preset_request_cancel", syscallR1(preset_request_cancel, q.handle))
+	return q.handle.use(func(handle uintptr) error {
+		return nativeStatus("preset_request_cancel", handle)
+	})
 }
 
 // Wait returns true when the request reached a terminal state, false when only
 // this wait expired (PRESET_ERR_WAIT_TIMEOUT).
 func (q *DiagnosticRequest) Wait(timeoutMs uint32) (bool, error) {
-	rc := int32(syscallR1(preset_request_wait, q.handle, uintptr(timeoutMs)))
-	if rc == PresetErrWaitTimeout {
-		return false, nil
-	}
-	if rc < 0 {
-		return false, &PresetError{Code: rc, Func: "preset_request_wait", Message: LastError()}
-	}
-	return true, nil
+	return useHandle(&q.handle, func(handle uintptr) (bool, error) {
+		return nativeWait("preset_request_wait", handle, uintptr(timeoutMs))
+	})
 }
 
 // CopyResponse returns the response bytes, or nil when the request is not
 // terminal yet (PRESET_ERR_NOT_READY).
 func (q *DiagnosticRequest) CopyResponse() ([]byte, error) {
-	data, rc, err := callCopy(preset_request_copy_response, q.handle)
-	if rc == PresetErrNotReady {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return data, nil
+	return useHandle(&q.handle, func(handle uintptr) ([]byte, error) {
+		data, rc, err := callCopy("preset_request_copy_response", handle)
+		if rc == PresetErrNotReady {
+			return nil, nil
+		}
+		return data, err
+	})
 }
 
 func (q *DiagnosticRequest) CopyError() (string, error) {
-	data, _, err := callCopy(preset_request_copy_error, q.handle)
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
+	return useHandle(&q.handle, func(handle uintptr) (string, error) {
+		data, _, err := callCopy("preset_request_copy_error", handle)
+		return string(data), err
+	})
 }
 
 func (q *DiagnosticRequest) Close() error {
-	if q == nil || q.handle == 0 {
+	if q == nil {
 		return nil
 	}
-	rc := syscallR1(preset_request_close, uintptr(unsafe.Pointer(&q.handle)))
-	return presetStatus("preset_request_close", rc)
+	return q.handle.close("preset_request_close")
 }
 
-// UdsRequest starts a CAN UDS request, waits for the result, reads the
+// UDSRequest starts a CAN UDS request, waits for the result, reads the
 // response and releases the request handle.
 //
 // A UDS negative response (7F xx NRC) is returned normally: check info.Outcome
-// and info.LastNrc. Transport errors, timeouts and cancellation return an
+// and info.LastNRC. Transport errors, timeouts and cancellation return an
 // error together with the request info and whatever response was collected.
-func (r *CanRuntime) UdsRequest(cfg *CanDiagnosticConfig, timeouts *RequestTimeouts, pdu []byte, waitMs uint32) (DiagnosticRequestInfo, []byte, error) {
+func (r *CANRuntime) UDSRequest(cfg *CANDiagnosticConfig, timeouts *RequestTimeouts, pdu []byte, waitMs uint32) (DiagnosticRequestInfo, []byte, error) {
 	req, err := r.StartRequest(cfg, timeouts, pdu)
 	if err != nil {
 		return DiagnosticRequestInfo{}, nil, err
@@ -718,25 +822,53 @@ func (r *CanRuntime) UdsRequest(cfg *CanDiagnosticConfig, timeouts *RequestTimeo
 	return finishRequest(req, waitMs)
 }
 
-func finishRequest(req *DiagnosticRequest, waitMs uint32) (DiagnosticRequestInfo, []byte, error) {
-	defer req.Close()
+func finishRequest(req *DiagnosticRequest, waitMs uint32) (info DiagnosticRequestInfo, response []byte, err error) {
+	defer func() {
+		if closeErr := req.Close(); closeErr != nil {
+			if err == nil {
+				err = closeErr
+			} else {
+				err = fmt.Errorf("%w; close diagnostic request: %v", err, closeErr)
+			}
+		}
+	}()
 
 	done, err := req.Wait(waitMs)
 	if err != nil {
 		return DiagnosticRequestInfo{}, nil, err
 	}
-	if !done {
-		_ = req.Cancel()
-		_, _ = req.Wait(1000)
+	waitExpired := !done
+	if waitExpired {
+		if err := req.Cancel(); err != nil {
+			return DiagnosticRequestInfo{}, nil, err
+		}
+		done, err = req.Wait(1000)
+		if err != nil {
+			return DiagnosticRequestInfo{}, nil, err
+		}
+		if !done {
+			return DiagnosticRequestInfo{}, nil, &PresetError{
+				Code:    PresetErrWaitTimeout,
+				Func:    "uds_request",
+				Message: "request cancellation did not finish within 1000 ms",
+			}
+		}
 	}
 
-	info, err := req.GetInfo()
+	info, err = req.GetInfo()
 	if err != nil {
 		return DiagnosticRequestInfo{}, nil, err
 	}
-	response, err := req.CopyResponse()
+	response, err = req.CopyResponse()
 	if err != nil {
 		return info, nil, err
+	}
+	if waitExpired {
+		return info, response, &PresetError{
+			Code:    PresetErrWaitTimeout,
+			Func:    "uds_request",
+			Message: fmt.Sprintf("request did not finish within %d ms and was cancelled", waitMs),
+		}
 	}
 
 	if (info.Outcome == PresetOutcomeError ||

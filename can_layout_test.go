@@ -1,6 +1,6 @@
 //go:build windows && amd64
 
-package main
+package preset
 
 import (
 	"testing"
@@ -9,37 +9,37 @@ import (
 
 // These sizes/offsets must match preset_rs.h (ABI v12). The DLL reads the
 // structs through raw pointers, so any layout drift is a memory-safety bug.
-func TestCanStructLayout(t *testing.T) {
+func TestStructLayout(t *testing.T) {
 	type layout struct {
 		name string
 		got  uintptr
 		want uintptr
 	}
 	checks := []layout{
-		{"CanFdTiming", unsafe.Sizeof(CanFdTiming{}), 32},
-		{"CanChannelConfig", unsafe.Sizeof(CanChannelConfig{}), 28},
-		{"ToomossCanCfg", unsafe.Sizeof(ToomossCanCfg{}), 32},
-		{"CanFrame", unsafe.Sizeof(CanFrame{}), 88},
-		{"RxStats", unsafe.Sizeof(RxStats{}), 24},
+		{"CANFDTiming", unsafe.Sizeof(CANFDTiming{}), 32},
+		{"CANChannelConfig", unsafe.Sizeof(CANChannelConfig{}), 28},
+		{"ToomossCANConfig", unsafe.Sizeof(ToomossCANConfig{}), 32},
+		{"CANFrame", unsafe.Sizeof(CANFrame{}), 88},
+		{"RXStats", unsafe.Sizeof(RXStats{}), 24},
 		{"BusLoad", unsafe.Sizeof(BusLoad{}), 32},
-		{"CanRuntimeOptions", unsafe.Sizeof(CanRuntimeOptions{}), 8},
-		{"CanObserverOptions", unsafe.Sizeof(CanObserverOptions{}), 8},
+		{"CANRuntimeOptions", unsafe.Sizeof(CANRuntimeOptions{}), 8},
+		{"CANObserverOptions", unsafe.Sizeof(CANObserverOptions{}), 8},
 		{"RequestTimeouts", unsafe.Sizeof(RequestTimeouts{}), 12},
-		{"CanDiagnosticConfig", unsafe.Sizeof(CanDiagnosticConfig{}), 40},
+		{"CANDiagnosticConfig", unsafe.Sizeof(CANDiagnosticConfig{}), 40},
 		{"DiagnosticRequestInfo", unsafe.Sizeof(DiagnosticRequestInfo{}), 64},
-		{"CanCaptureEvent", unsafe.Sizeof(CanCaptureEvent{}), 112},
-		{"CanRuntimeInfo", unsafe.Sizeof(CanRuntimeInfo{}), 48},
-		{"AutoCfg", unsafe.Sizeof(AutoCfg{}), 36},
-		{"PCANCfg", unsafe.Sizeof(PCANCfg{}), 32},
-		{"TSMasterCfg", unsafe.Sizeof(TSMasterCfg{}), 40},
-		{"VectorCfg", unsafe.Sizeof(VectorCfg{}), 72},
-		{"ToomossLinCfg", unsafe.Sizeof(ToomossLinCfg{}), 8},
-		{"LinFrame", unsafe.Sizeof(LinFrame{}), 24},
-		{"PCANLinCfg", unsafe.Sizeof(PCANLinCfg{}), 8},
-		{"TSMasterLinCfg", unsafe.Sizeof(TSMasterLinCfg{}), 16},
-		{"VectorLinCfg", unsafe.Sizeof(VectorLinCfg{}), 24},
-		{"ToomossElinsCfg", unsafe.Sizeof(ToomossElinsCfg{}), 12},
-		{"ToomossElinsMessage", unsafe.Sizeof(ToomossElinsMessage{}), 88},
+		{"CANCaptureEvent", unsafe.Sizeof(CANCaptureEvent{}), 112},
+		{"CANRuntimeInfo", unsafe.Sizeof(CANRuntimeInfo{}), 48},
+		{"AutoConfig", unsafe.Sizeof(AutoConfig{}), 36},
+		{"PCANConfig", unsafe.Sizeof(PCANConfig{}), 32},
+		{"TSMasterConfig", unsafe.Sizeof(TSMasterConfig{}), 40},
+		{"VectorConfig", unsafe.Sizeof(VectorConfig{}), 72},
+		{"ToomossLINConfig", unsafe.Sizeof(ToomossLINConfig{}), 8},
+		{"LINFrame", unsafe.Sizeof(LINFrame{}), 24},
+		{"PCANLINConfig", unsafe.Sizeof(PCANLINConfig{}), 8},
+		{"TSMasterLINConfig", unsafe.Sizeof(TSMasterLINConfig{}), 16},
+		{"VectorLINConfig", unsafe.Sizeof(VectorLINConfig{}), 24},
+		{"ToomossELINSConfig", unsafe.Sizeof(ToomossELINSConfig{}), 12},
+		{"ToomossELINSMessage", unsafe.Sizeof(ToomossELINSMessage{}), 88},
 	}
 	for _, c := range checks {
 		if c.got != c.want {
@@ -48,19 +48,19 @@ func TestCanStructLayout(t *testing.T) {
 	}
 
 	checks = []layout{
-		{"CanChannelConfig.Can", unsafe.Offsetof(ToomossCanCfg{}.Can), 4},
-		{"CanFrame.TimestampUs", unsafe.Offsetof(CanFrame{}.TimestampUs), 16},
-		{"CanFrame.Data", unsafe.Offsetof(CanFrame{}.Data), 24},
-		{"CanDiagnosticConfig.Addressing", unsafe.Offsetof(CanDiagnosticConfig{}.Addressing), 32},
-		{"DiagnosticRequestInfo.LastNrc", unsafe.Offsetof(DiagnosticRequestInfo{}.LastNrc), 56},
-		{"CanRuntimeInfo.CallInProgress", unsafe.Offsetof(CanRuntimeInfo{}.CallInProgress), 40},
-		{"CanCaptureEvent.Frame", unsafe.Offsetof(CanCaptureEvent{}.Frame), 24},
-		{"AutoCfg.Can", unsafe.Offsetof(AutoCfg{}.Can), 4},
-		{"AutoCfg.CandidateOrder", unsafe.Offsetof(AutoCfg{}.CandidateOrder), 32},
-		{"TSMasterCfg.Can", unsafe.Offsetof(TSMasterCfg{}.Can), 12},
-		{"VectorCfg.Can", unsafe.Offsetof(VectorCfg{}.Can), 44},
-		{"LinFrame.TimestampUs", unsafe.Offsetof(LinFrame{}.TimestampUs), 16},
-		{"ToomossElinsMessage.Data", unsafe.Offsetof(ToomossElinsMessage{}.Data), 18},
+		{"ToomossCANConfig.CAN", unsafe.Offsetof(ToomossCANConfig{}.CAN), 4},
+		{"CANFrame.TimestampUS", unsafe.Offsetof(CANFrame{}.TimestampUS), 16},
+		{"CANFrame.Data", unsafe.Offsetof(CANFrame{}.Data), 24},
+		{"CANDiagnosticConfig.Addressing", unsafe.Offsetof(CANDiagnosticConfig{}.Addressing), 32},
+		{"DiagnosticRequestInfo.LastNRC", unsafe.Offsetof(DiagnosticRequestInfo{}.LastNRC), 56},
+		{"CANRuntimeInfo.CallInProgress", unsafe.Offsetof(CANRuntimeInfo{}.CallInProgress), 40},
+		{"CANCaptureEvent.Frame", unsafe.Offsetof(CANCaptureEvent{}.Frame), 24},
+		{"AutoConfig.CAN", unsafe.Offsetof(AutoConfig{}.CAN), 4},
+		{"AutoConfig.CandidateOrder", unsafe.Offsetof(AutoConfig{}.CandidateOrder), 32},
+		{"TSMasterConfig.CAN", unsafe.Offsetof(TSMasterConfig{}.CAN), 12},
+		{"VectorConfig.CAN", unsafe.Offsetof(VectorConfig{}.CAN), 44},
+		{"LINFrame.TimestampUS", unsafe.Offsetof(LINFrame{}.TimestampUS), 16},
+		{"ToomossELINSMessage.Data", unsafe.Offsetof(ToomossELINSMessage{}.Data), 18},
 	}
 	for _, c := range checks {
 		if c.got != c.want {

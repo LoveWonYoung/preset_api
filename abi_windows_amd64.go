@@ -1,6 +1,6 @@
 //go:build windows && amd64
 
-package main
+package preset
 
 import (
 	"unsafe"
