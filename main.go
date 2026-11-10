@@ -2,46 +2,9 @@ package main
 
 import (
 	"fmt"
-	"time"
-)
-
-const (
-	CHANNEL1 byte = iota
-	CHANNEL2
-	CHANNEL3
-	CHANNEL4
 )
 
 func main() {
-	if false {
-		t, err := NewToomoss()
-		if err != nil {
-			return
-		}
-		defer t.Close()
-		t.LinInit(0)
-		if t.Break(CHANNEL1) != nil {
-			panic("break is panic")
-		}
-		time.Sleep(400 * time.Millisecond)
-		if l := t.RxOpt(0, 1, 10); l.IsSome() {
-			fmt.Println(l.Unwarp())
-		} else {
-			fmt.Println("is none")
-		}
-		fmt.Printf("t.Send(0, 0x3c, []byte{0x7F, 0x03, 0x22, 0xF1, 0x89, 0xFF, 0xFF, 0xFF}): %v\n", t.Send(0, 0x3c, []byte{0x7F, 0x03, 0x22, 0xF1, 0x89, 0xFF, 0xFF, 0xFF}))
-		fmt.Printf("t.Send(0, 0x3c, []byte{0x7F, 0x03, 0x22, 0xF1, 0x89, 0xFF, 0xFF, 0xFF}): %v\n", t.Send(0, 0x3c, []byte{0x7F, 0x03, 0x22, 0xF1, 0x89, 0xFF, 0xFF, 0xFF}))
-		fmt.Printf("t.Send(0, 0x3c, []byte{0x7F, 0x03, 0x22, 0xF1, 0x89, 0xFF, 0xFF, 0xFF}): %v\n", t.Send(0, 0x3c, []byte{0x7F, 0x03, 0x22, 0xF1, 0x89, 0xFF, 0xFF, 0xFF}))
-		for range 10 {
-			// fmt.Println(t.Rx(0, 0x3d, 20))
-			if l := t.RxOpt(0, 0x3d, 20); l.IsSome() {
-				fmt.Println(l.Unwarp())
-			} else {
-				fmt.Println("is none")
-			}
-		}
-	}
-
 	dev, err := NewToomoss()
 	if err != nil {
 		panic(err)

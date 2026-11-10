@@ -6,8 +6,13 @@ import (
 	"unsafe"
 )
 
+var lib, _ = syscall.LoadLibrary("bin\\preset_rs.dll")
+
 // All backends share the Device CAN/LIN methods. Close child runtimes and LIN
 // clients before closing the device. Native DLL and vendor drivers are Windows-only.
+type Device struct{ device uintptr }
+
+type Toomoss struct{ Device }
 type PCAN struct{ Device }
 type TSMaster struct{ Device }
 type Vector struct{ Device }
@@ -111,6 +116,14 @@ func NewPCAN() (*PCAN, error) {
 	return &PCAN{Device{device: h}}, nil
 }
 
+func NewToomoss() (*Toomoss, error) {
+	h, err := openNamedDevice("preset_toomoss_open")
+	if err != nil {
+		return nil, err
+	}
+	return &Toomoss{Device{device: h}}, nil
+}
+
 func NewTSMaster() (*TSMaster, error) {
 	h, err := openNamedDevice("preset_tsmaster_open")
 	if err != nil {
@@ -125,6 +138,14 @@ func NewVector() (*Vector, error) {
 		return nil, err
 	}
 	return &Vector{Device{device: h}}, nil
+}
+
+// Close releases the physical device. Close all borrowed handles first.
+func (t *Device) Close() error {
+	if t == nil || t.device == 0 {
+		return nil
+	}
+	return nativeStatus("preset_device_close", uintptr(unsafe.Pointer(&t.device)))
 }
 
 func AutoDefaultCfg() (AutoCfg, error) { return defaultStruct[AutoCfg]("preset_auto_default_config") }

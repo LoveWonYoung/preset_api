@@ -65,10 +65,7 @@ const (
 )
 
 var (
-	preset_toomoss_default_config, _    = syscall.GetProcAddress(lib, "preset_toomoss_default_config")
-	preset_toomoss_default_fd_timing, _ = syscall.GetProcAddress(lib, "preset_toomoss_default_fd_timing")
-	preset_toomoss_can_init, _          = syscall.GetProcAddress(lib, "preset_toomoss_can_init")
-	preset_device_get_backend, _        = syscall.GetProcAddress(lib, "preset_device_get_backend")
+	preset_device_get_backend, _ = syscall.GetProcAddress(lib, "preset_device_get_backend")
 
 	preset_can_write_with_brs, _ = syscall.GetProcAddress(lib, "preset_can_write_with_brs")
 	preset_can_write_ex, _       = syscall.GetProcAddress(lib, "preset_can_write_ex")
@@ -316,16 +313,12 @@ type CanRuntimeInfo struct {
 
 // Structs larger than 8 bytes are returned through a hidden first argument on
 // the Microsoft x64 calling convention, so pass the destination pointer.
-func ToomossCanDefaultCfg() ToomossCanCfg {
-	var cfg ToomossCanCfg
-	syscall.SyscallN(preset_toomoss_default_config, uintptr(unsafe.Pointer(&cfg)))
-	return cfg
+func ToomossCanDefaultCfg() (ToomossCanCfg, error) {
+	return defaultStruct[ToomossCanCfg]("preset_toomoss_default_config")
 }
 
-func ToomossDefaultFdTiming() CanFdTiming {
-	var timing CanFdTiming
-	syscall.SyscallN(preset_toomoss_default_fd_timing, uintptr(unsafe.Pointer(&timing)))
-	return timing
+func ToomossCanDefaultFdTiming() (CanFdTiming, error) {
+	return defaultStruct[CanFdTiming]("preset_toomoss_default_fd_timing")
 }
 
 func DefaultRuntimeOptions() CanRuntimeOptions {
@@ -359,7 +352,10 @@ func DefaultCanDiagnosticConfig(physicalID, responseID, functionalID uint32) Can
 // default Toomoss configuration.
 func (t *Toomoss) CanInit(channels ...byte) error {
 	for _, v := range channels {
-		cfg := ToomossCanDefaultCfg()
+		cfg, err := ToomossCanDefaultCfg()
+		if err != nil {
+			return err
+		}
 		cfg.Channel = v
 		if err := t.CanInitCfg(&cfg, nil); err != nil {
 			return err
@@ -374,12 +370,7 @@ func (t *Toomoss) CanInitCfg(cfg *ToomossCanCfg, timing *CanFdTiming) error {
 	if cfg == nil {
 		return fmt.Errorf("Toomoss config is nil")
 	}
-	var timingPtr uintptr
-	if timing != nil {
-		timingPtr = uintptr(unsafe.Pointer(timing))
-	}
-	rc := syscallR1(preset_toomoss_can_init, t.device, uintptr(unsafe.Pointer(cfg)), timingPtr)
-	return presetStatus("preset_toomoss_can_init", rc)
+	return nativeStatus("preset_toomoss_can_init", t.device, uintptr(unsafe.Pointer(cfg)), uintptr(unsafe.Pointer(timing)))
 }
 
 // Backend returns PRESET_CAN_BACKEND_* for this device.

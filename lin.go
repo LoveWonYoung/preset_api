@@ -16,6 +16,12 @@ const (
 	ToomossLinPower5V  byte = 2
 )
 
+type ToomossLinCfg struct {
+	Channel    byte
+	MasterMode byte
+	Baudrate   uint32
+}
+
 type PCANLinCfg struct {
 	Channel        byte
 	Reserved       byte
@@ -44,6 +50,16 @@ type VectorLinCfg struct {
 	RxQueueSize        uint32
 }
 
+type LinFrame struct {
+	ID              byte
+	DataLen         byte
+	ClassicChecksum byte // 1 classic, 0 enhanced
+	ChecksumKnown   byte // 0 unknown, 1 driver or channel configuration
+	Data            [8]byte
+	Timestamp       uint32
+	TimestampUs     uint64
+}
+
 type ToomossElinsCfg struct {
 	ChannelsMask     byte
 	ResistorEnabled  byte
@@ -70,6 +86,9 @@ type ToomossElinsMessage struct {
 	AckValue        [4]byte
 }
 
+func ToomossLinDefaultCfg() (ToomossLinCfg, error) {
+	return defaultStruct[ToomossLinCfg]("preset_toomoss_lin_default_config")
+}
 func PCANLinDefaultCfg() (PCANLinCfg, error) {
 	return defaultStruct[PCANLinCfg]("preset_pcan_lin_default_config")
 }
@@ -123,6 +142,25 @@ func (t *Toomoss) LinInitCfg(cfg *ToomossLinCfg) error {
 	return nativeStatus("preset_toomoss_lin_init", t.device, uintptr(unsafe.Pointer(cfg)))
 }
 
+// LinInit initializes each supplied zero-based Toomoss LIN channel with the
+// library's default configuration.
+func (t *Toomoss) LinInit(channels ...byte) error {
+	for _, channel := range channels {
+		if channel > 3 {
+			return fmt.Errorf("Toomoss LIN channel must be in range 0-3")
+		}
+		cfg, err := ToomossLinDefaultCfg()
+		if err != nil {
+			return err
+		}
+		cfg.Channel = channel
+		if err := t.LinInitCfg(&cfg); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (t *Toomoss) LinSetPower(channel, voltage byte) error {
 	return nativeStatus("preset_toomoss_lin_set_power", t.device, uintptr(channel), uintptr(voltage))
 }
@@ -174,6 +212,7 @@ func (t *Device) LinRead(channel, id byte, timeoutMs uint32) (LinFrame, error) {
 	return frame, err
 }
 
+// LinWakeup wakes an initialized LIN channel. On Toomoss this sends a master break.
 func (t *Device) LinWakeup(channel byte) error {
 	return nativeStatus("preset_lin_wakeup", t.device, uintptr(channel))
 }

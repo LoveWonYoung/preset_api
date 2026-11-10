@@ -8,10 +8,9 @@
 
 ## 代码组织
 
-- `device.go`：共同的 `Device` 句柄、自动驱动以及 PCAN/TSMaster/Vector CAN 初始化。
-- `toomoss_api.go`：Toomoss LIN 和设备关闭。
+- `device.go`：共同的 `Device` 句柄与关闭、各厂商设备打开、自动驱动以及 PCAN/TSMaster/Vector CAN 初始化。
 - `can.go`：CAN/CAN-FD、诊断运行时、观察者、UDS 请求。
-- `lin.go`：各厂商 LIN 配置、LIN 主从读写和 LIN UDS。
+- `lin.go`：各厂商（含 Toomoss）LIN 配置、LIN 主从读写和 LIN UDS。
 - `extras.go`：能力查询、日志和周期 CAN 发送。
 - `abi_windows_amd64.go`：Windows x64 C 结构体返回规则；`can_layout_test.go`：结构体大小和偏移回归测试。
 
