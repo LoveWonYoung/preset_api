@@ -126,11 +126,16 @@ func LastError() string {
 	if preset_last_error == 0 {
 		return ""
 	}
-	data, _, err := callCopy(preset_last_error, 0)
-	if err != nil {
+	var n uintptr
+	rc := int32(syscallR1(preset_last_error, 0, 0, uintptr(unsafe.Pointer(&n))))
+	if rc < 0 && rc != PresetErrBufferTooSmall || n == 0 {
 		return ""
 	}
-	return string(data)
+	data := make([]byte, n)
+	if int32(syscallR1(preset_last_error, bytePtr(data), n, uintptr(unsafe.Pointer(&n)))) < 0 {
+		return ""
+	}
+	return string(data[:n])
 }
 
 // callCopy implements the two-call NULL/0 length query then copy pattern used
@@ -366,6 +371,9 @@ func (t *Toomoss) CanInit(channels ...byte) error {
 // CanInitCfg initializes one CAN channel. A nil timing pointer lets the
 // library derive controller timing from the configured bitrates.
 func (t *Toomoss) CanInitCfg(cfg *ToomossCanCfg, timing *CanFdTiming) error {
+	if cfg == nil {
+		return fmt.Errorf("Toomoss config is nil")
+	}
 	var timingPtr uintptr
 	if timing != nil {
 		timingPtr = uintptr(unsafe.Pointer(timing))
@@ -375,7 +383,7 @@ func (t *Toomoss) CanInitCfg(cfg *ToomossCanCfg, timing *CanFdTiming) error {
 }
 
 // Backend returns PRESET_CAN_BACKEND_* for this device.
-func (t *Toomoss) Backend() (byte, error) {
+func (t *Device) Backend() (byte, error) {
 	var backend byte
 	rc := syscallR1(preset_device_get_backend, t.device, uintptr(unsafe.Pointer(&backend)))
 	if err := presetStatus("preset_device_get_backend", rc); err != nil {
@@ -388,7 +396,7 @@ func (t *Toomoss) Backend() (byte, error) {
 
 // CanWrite sends a raw CAN/CAN-FD frame. Standard 11-bit IDs only; use
 // CanWriteFrame for extended or remote frames.
-func (t *Toomoss) CanWrite(channel byte, id uint32, data []byte, isFD, brs bool) error {
+func (t *Device) CanWrite(channel byte, id uint32, data []byte, isFD, brs bool) error {
 	rc := syscallR1(
 		preset_can_write_with_brs,
 		t.device,
@@ -402,13 +410,13 @@ func (t *Toomoss) CanWrite(channel byte, id uint32, data []byte, isFD, brs bool)
 }
 
 // CanWriteFrame sends a structured frame (extended IDs, classic remote frames).
-func (t *Toomoss) CanWriteFrame(channel byte, frame *CanFrame) error {
+func (t *Device) CanWriteFrame(channel byte, frame *CanFrame) error {
 	rc := syscallR1(preset_can_write_ex, t.device, uintptr(channel), uintptr(unsafe.Pointer(frame)))
 	return presetStatus("preset_can_write_ex", rc)
 }
 
 // CanTryRead drains up to maxFrames frames from the channel queue.
-func (t *Toomoss) CanTryRead(channel byte, maxFrames int) ([]CanFrame, error) {
+func (t *Device) CanTryRead(channel byte, maxFrames int) ([]CanFrame, error) {
 	if maxFrames <= 0 {
 		return nil, nil
 	}
@@ -459,7 +467,7 @@ type CanRuntime struct {
 
 // CanRuntimeNew creates a diagnostic runtime that borrows an initialized
 // channel. Pass no options to use 256 commands / 100 ms recovery.
-func (t *Toomoss) CanRuntimeNew(channel byte, options ...CanRuntimeOptions) (*CanRuntime, error) {
+func (t *Device) CanRuntimeNew(channel byte, options ...CanRuntimeOptions) (*CanRuntime, error) {
 	opts := DefaultRuntimeOptions()
 	if len(options) > 0 {
 		opts = options[0]
@@ -532,45 +540,10 @@ func (r *CanRuntime) WaitStopped(timeoutMs uint32) (bool, error) {
 	if rc == PresetErrWaitTimeout {
 		return false, nil
 	}
-<<<<<<< Updated upstream
-	return withHandle(client.state, func(handle uintptr) int32 {
-		return invokeStatus(
-			"preset_can_uds_write",
-			word(handle), word(uintptr(id)), word(fd), slicePointer(payload), word(uintptr(len(payload))),
-		)
-	})
-}
-
-func CanUdsWriteWithBrs(
-	client PresetCanUdsClient,
-	id uint32,
-	isFD bool,
-	brs bool,
-	data []byte) int32 {
-	var fd, _brs = 0, 0
-	if isFD {
-		fd = 1
-	}
-	if brs {
-		_brs = 1
-	}
-	return withHandle(client.state, func(handle uintptr) int32 {
-		return invokeStatus(
-			"preset_can_uds_write_with_brs",
-			word(handle),
-			word(uintptr(id)),
-			word(uintptr(fd)),
-			word(uintptr(_brs)),
-			slicePointer(data),
-			word(uintptr(len(data))),
-		)
-	})
-=======
 	if rc < 0 {
 		return false, &PresetError{Code: rc, Func: "preset_can_runtime_wait_stopped", Message: LastError()}
 	}
 	return true, nil
->>>>>>> Stashed changes
 }
 
 func (r *CanRuntime) Close() error {

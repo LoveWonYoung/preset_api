@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"syscall"
 	"unsafe"
@@ -20,19 +19,19 @@ var (
 )
 
 type ToomossLinCfg struct {
-	channel    byte
-	masterMode byte
-	baudrate   uint32
+	Channel    byte
+	MasterMode byte
+	Baudrate   uint32
 }
 
 type LinFrame struct {
-	id            byte
-	dataLen       byte
-	checksum      byte //1 classic 0 enhanced
-	checksumKnown byte /* 0 unknown, 1 driver or channel configuration */
-	data          [8]byte
-	timestamp     uint32
-	timestampUs   uint64
+	ID              byte
+	DataLen         byte
+	ClassicChecksum byte // 1 classic, 0 enhanced
+	ChecksumKnown   byte // 0 unknown, 1 driver or channel configuration
+	Data            [8]byte
+	Timestamp       uint32
+	TimestampUs     uint64
 }
 
 func ToomossDefaultCfg() ToomossLinCfg {
@@ -43,76 +42,71 @@ func ToomossDefaultCfg() ToomossLinCfg {
 }
 
 type Toomoss struct {
+	Device
+}
+
+// Device owns a preset_rs handle shared by CAN and LIN channels.
+type Device struct {
 	device uintptr
 }
 
 func NewToomoss() (*Toomoss, error) {
 
-	var device uintptr
-	if r1, _, _ := syscall.SyscallN(preset_toomoss_open, uintptr(unsafe.Pointer(&device))); r1 != 0 {
-		fmt.Println(r1)
-		return nil, errors.New("open fail")
-	} else {
-		fmt.Printf("device open Ok (%d)\n", int32(r1))
+	device, err := openDevice(preset_toomoss_open, "preset_toomoss_open")
+	if err != nil {
+		return nil, err
 	}
-
-	return &Toomoss{device: device}, nil
+	return &Toomoss{Device: Device{device: device}}, nil
 }
 
 func (t *Toomoss) LinInit(channels ...byte) error {
 	if len(channels) == 0 {
-		return fmt.Errorf("channals invalid")
+		return fmt.Errorf("channels invalid")
 	}
 
 	for _, v := range channels {
 		if v > 3 {
-			return fmt.Errorf("channals invalid any channel > 3")
+			return fmt.Errorf("channels invalid: channel > 3")
 		}
 		cfg := ToomossDefaultCfg()
-		cfg.channel = v
-		if r1, _, _ := syscall.SyscallN(
+		cfg.Channel = v
+		if err := presetStatus("preset_toomoss_lin_init", syscallR1(
 			preset_toomoss_lin_init,
 			t.device,
-			uintptr(unsafe.Pointer(&cfg))); r1 != 0 {
-			fmt.Println(r1)
-			return errors.New("init fail")
-		} else {
-			fmt.Printf("device init Ok (%d)\n", r1)
+			uintptr(unsafe.Pointer(&cfg)))); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
 func (t *Toomoss) Break(channel byte) error {
-	if r1, _, _ := syscall.SyscallN(preset_toomoss_lin_break, t.device, uintptr(channel)); r1 != 0 {
-		return errors.New("toomoss break is fail")
-	}
-	return nil
+	return presetStatus("preset_toomoss_lin_break", syscallR1(preset_toomoss_lin_break, t.device, uintptr(channel)))
 }
 
 func (t *Toomoss) Send(channel byte, id byte, data []byte) error {
-	if r1, _, _ := syscall.SyscallN(
+	if len(data) == 0 || len(data) > 8 {
+		return fmt.Errorf("LIN payload must contain 1-8 bytes")
+	}
+	return presetStatus("preset_lin_master_write", syscallR1(
 		preset_lin_master_write,
 		t.device,
 		uintptr(channel),
 		uintptr(id),
-		uintptr(unsafe.Pointer(&data[0])),
-		uintptr(len(data))); r1 != 0 {
-		return errors.New("toomoss send is fail")
-	}
-	return nil
+		bytePtr(data),
+		uintptr(len(data))))
 }
 
 func (t *Toomoss) Rx(channel byte, id byte, timeoutMs uint32) (LinFrame, error) {
 	var frame LinFrame
-	if r1, _, _ := syscall.SyscallN(
+	if err := presetStatus("preset_lin_master_read", syscallR1(
 		preset_lin_master_read,
 		t.device,
 		uintptr(channel),
 		uintptr(id),
 		uintptr(timeoutMs),
-		uintptr(unsafe.Pointer(&frame))); r1 != 0 {
-		return LinFrame{}, errors.New("toomoss rx is fail")
+		uintptr(unsafe.Pointer(&frame)))); err != nil {
+		return LinFrame{}, err
 	}
 	return frame, nil
 }
@@ -120,18 +114,14 @@ func (t *Toomoss) Rx(channel byte, id byte, timeoutMs uint32) (LinFrame, error) 
 func (t *Toomoss) RxOpt(channel byte, id byte, timeoutMs uint32) (o Option[LinFrame]) {
 	var f, err = t.Rx(channel, id, timeoutMs)
 	if err != nil {
-		None[LinFrame]()
-		return
+		return None[LinFrame]()
 	}
 	return Some(f)
 }
 
-func (t *Toomoss) Close() error {
+func (t *Device) Close() error {
 	if t == nil || t.device == 0 {
 		return nil
 	}
-	if rc := syscallR1(preset_device_close, uintptr(unsafe.Pointer(&t.device))); int32(rc) < 0 {
-		return &PresetError{Code: int32(rc), Func: "preset_device_close", Message: LastError()}
-	}
-	return nil
+	return presetStatus("preset_device_close", syscallR1(preset_device_close, uintptr(unsafe.Pointer(&t.device))))
 }
